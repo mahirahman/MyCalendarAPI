@@ -1,34 +1,33 @@
-import pandas as pd
-import json
-import sqlite3
 from datetime import datetime
 from flask import Flask, request
-from flask_restx import Resource, Api, fields
+from flask_restx import Api, Resource, fields
+from util.sql import execute_query
 
 app = Flask(__name__)
-api = Api(app)
+api = Api(app,
+          default="Events",
+          title="Events API",
+          description="Time-management and scheduling calendar service (Google Calendar) for Australians.")  # Documentation Description)
 
-connection = sqlite3.connect('z5364199.db', check_same_thread=False)
-with connection:
-    cursor = connection.cursor()
-    cursor.execute("""
-                   CREATE TABLE IF NOT EXISTS events(
-                       event_id INTEGER PRIMARY KEY,
-                       name TEXT,
-                       date DATE,
-                       time_from TIME,
-                       time_to TIME,
-                       street TEXT,
-                       suburb TEXT,
-                       state TEXT,
-                       post_code TEXT,
-                       description TEXT
-                   )
-                   """)
-    connection.commit()
+execute_query(
+    """
+        CREATE TABLE IF NOT EXISTS events (
+            event_id INTEGER PRIMARY KEY,
+            name TEXT,
+            date DATE,
+            time_from TIME,
+            time_to TIME,
+            street TEXT,
+            suburb TEXT,
+            state TEXT,
+            post_code TEXT,
+            description TEXT,
+            last_update DATETIME
+        )
+    """)
 
 # Schema of an event
-eventModel = api.model('Event', {
+event_model = api.model('Event', {
     "name": fields.String(example="Birthday Party"),
     "date": fields.Date(example="2000-01-01"),
     "from": fields.String(example="16:00:00"),
@@ -49,26 +48,25 @@ class Event(Resource):
     @api.response(201, 'Event Created Successfully')
     @api.response(400, 'Validation Error')
     @api.doc(description="Create a new event")
-    @api.expect(eventModel, validate=False)
+    @api.expect(event_model, validate=True)
     def post(self):
-        eventBody = request.json
-        isOverlap = pd.read_sql_query("""SELECT * FROM events WHERE date = ? AND time_from < ? AND time_to > ?""",
-                                      connection, params=(eventBody['date'], eventBody['to'], eventBody['from'],))
+        request_data = request.json
+        overlap_query = "SELECT * FROM events WHERE date = ? AND time_from < ? AND time_to > ?"
+        overlap_params = (request_data['date'],
+                          request_data['to'], request_data['from'])
+        is_overlap = execute_query(overlap_query, overlap_params)
 
-        if not isOverlap.empty:
-            return {"Error": "Event overlaps with another event", "Overlap": isOverlap.to_json()}, 400
+        if is_overlap:
+            return {"Error": "Event overlaps with another event"}, 400
 
-        eventId = pd.read_sql_query(
-            "SELECT COUNT(*) FROM events", connection).iloc[0, 0] + 1
-        with connection:
-            cursor = connection.cursor()
-            cursor.execute("""
-                           INSERT INTO events VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                           """, (eventBody['name'], eventBody['date'], eventBody['from'], eventBody['to'],
-                                 eventBody['location']['street'], eventBody['location']['suburb'], eventBody['location']['state'],
-                                 eventBody['location']['post-code'], eventBody['description']))
-            connection.commit()
-        return {'id': int(eventId), 'last-update': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '_links': {'self': {'href': f'/events/{str(eventId)}'}}}, 201
+        event_id = execute_query("SELECT COUNT(*) FROM events")[0][0] + 1
+        curr_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        insert_query = "INSERT INTO events VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        insert_params = (request_data['name'], request_data['date'], request_data['from'], request_data['to'],
+                         request_data['location']['street'], request_data['location']['suburb'], request_data['location']['state'],
+                         request_data['location']['post-code'], request_data['description'], curr_time)
+        execute_query(insert_query, insert_params)
+        return {'id': int(event_id), 'last-update': curr_time, '_links': {'self': {'href': f'/events/{str(event_id)}'}}}, 201
 
 
 if __name__ == '__main__':
