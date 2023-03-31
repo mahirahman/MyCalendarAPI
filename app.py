@@ -43,7 +43,7 @@ event_model = api.model('Event', {
 
 
 @api.route('/events')
-class Event(Resource):
+class CreateEvent(Resource):
 
     @api.response(201, 'Event Created Successfully')
     @api.response(400, 'Validation Error')
@@ -67,6 +67,65 @@ class Event(Resource):
                          request_data['location']['post-code'], request_data['description'], curr_time)
         execute_query(insert_query, insert_params)
         return {'id': int(event_id), 'last-update': curr_time, '_links': {'self': {'href': f'/events/{str(event_id)}'}}}, 201
+
+
+@api.route('/events/<int:id>')
+@api.param('id', 'The Event identifier')
+class Events(Resource):
+
+    @api.response(200, 'Successfully retrieved event')
+    @api.response(404, 'Event not found')
+    @api.doc(description="Get all books")
+    def get(self, id):
+        event = execute_query(
+            "SELECT * FROM events WHERE event_id = ?", (id,))[0]
+        if not event:
+            return {"Error": f"Event {id} doesn't exist"}, 404
+
+        previous_event = execute_query(
+            "SELECT * FROM events WHERE date < ? OR (date = ? AND time_to < ?) ORDER BY date DESC, time_to DESC LIMIT 1", (event[2], event[2], event[3]))
+        next_event = execute_query(
+            "SELECT * FROM events WHERE date > ? OR (date = ? AND time_from > ?) ORDER BY date ASC, time_from ASC LIMIT 1", (event[2], event[2], event[4]))
+
+        links = {
+            'self': {
+                'href': f'/events/{str(id)}'
+            }
+        }
+
+        if previous_event:
+            links['previous'] = {
+                'href': f'/events/{str(previous_event[0][0])}'
+            }
+        if next_event:
+            links['next'] = {
+                'href': f'/events/{str(next_event[0][0])}'
+            }
+
+        return {
+            'id': event[0],
+            'last-update': event[10],
+            'name': event[1],
+            'date': event[2],
+            'from': event[3],
+            'to': event[4],
+            'location': {
+                'street': event[5],
+                'suburb': event[6],
+                'state': event[7],
+                'post-code': event[8]
+            },
+            'description': event[9],
+            "_metadata": {
+                "wind-speed": "XXX",
+                "weather": "XXX",
+                "humidity": "XXX",
+                "temperature": "XXX",
+                "holiday": "XXX",
+                "weekend": "XXX"
+            },
+            '_links': links
+        }, 200
 
 
 if __name__ == '__main__':
