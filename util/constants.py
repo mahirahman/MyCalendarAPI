@@ -24,6 +24,9 @@ SCHEMA = (
         )
     """)
 
+FIELDS = {'name', 'date', 'from', 'to', 'location', 'description'}
+LOCATION_FIELDS = {'street', 'suburb', 'state', 'post-code'}
+
 # Error messages
 
 INVALID_NAME_MSG = "{} is an invalid name. Please use a name with 1-64 characters"

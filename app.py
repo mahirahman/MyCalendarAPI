@@ -43,10 +43,14 @@ class CreateEvent(Resource):
 
     @api.response(201, 'Event Created Successfully')
     @api.response(400, 'Validation Error')
-    @api.doc(description="Create a new event")
+    @api.doc(description="Create a New Event")
     @api.expect(event_model, validate=True)
     def post(self):
         request_data = request.json
+
+        # Check request data contains all required fields
+        if not const.FIELDS.issubset(request_data.keys()) or not const.LOCATION_FIELDS.issubset(request_data.get('location', {}).keys()):
+            return {"Error": "Missing required fields"}, 400
 
         # Validate request data
         validation_errors = validation.all_data(request_data)
@@ -75,10 +79,10 @@ class CreateEvent(Resource):
 @api.param('id', 'The Event identifier')
 class Events(Resource):
 
-    @api.response(200, 'Successfully retrieved event')
-    @api.response(404, 'Event not found')
-    @api.response(502, 'Error getting holiday data from NagerDate')
-    @api.doc(description="Get all books")
+    @api.response(200, 'Successfully Retrieved Event')
+    @api.response(404, 'Event Not Found')
+    @api.response(502, 'Error Getting Holiday Data From NagerDate')
+    @api.doc(description="Get All Books")
     def get(self, id):
         event = execute_query(
             "SELECT * FROM events WHERE event_id = ?", (id,))[0]
@@ -145,6 +149,46 @@ class Events(Resource):
             'description': event[9],
             '_metadata': metadata,
             '_links': links
+        }, 200
+
+    @api.response(404, 'Event Was Not Found')
+    @api.response(200, 'Event Deleted Successfully')
+    @api.doc(description="Delete an Event By Its ID")
+    def delete(self, id):
+        event = execute_query(
+            "SELECT * FROM events WHERE event_id = ?", (id,))[0]
+        if not event:
+            return {"Error": f"Event {id} doesn't exist"}, 404
+
+        execute_query("DELETE FROM events WHERE event_id = ?", (id,))
+        return {"message": f"The event with id {id} was removed from the database!", "id": id}, 200
+
+    @api.response(404, 'Event Was Not Found')
+    @api.response(200, 'Event Updated Successfully')
+    @api.response(400, 'Validation Error')
+    @api.doc(description="Update an Event By Its ID")
+    @api.expect(event_model, validate=True)
+    def patch(self, id):
+        request_data = request.json
+        # Check if request_data contains only the fields that can be updated
+        data_keys = set(request_data.keys())
+        if not data_keys.issubset(const.FIELDS):
+            return {"Error": "Invalid fields provided"}, 400
+        location_data = request_data.get('location', {})
+        if not set(location_data.keys()).issubset(const.LOCATION_FIELDS):
+            return {"Error": "Invalid location fields provided"}, 400
+        # if pass then check if all the fields are valid
+        #
+        # if pass then check if the event overlaps with another event
+        #
+        return {
+            "id" : id,  
+            "last-update": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "_links": {
+                "self": {
+                    "href": f"/events/{id}"
+                }
+            }
         }, 200
 
 
