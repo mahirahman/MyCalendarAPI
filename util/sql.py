@@ -1,10 +1,8 @@
 import sqlite3
-
-DB_NAME = 'z5364199'
-
+import util.constants as const
 
 def get_db():
-    connection = sqlite3.connect(f'{DB_NAME}.db', check_same_thread=False)
+    connection = sqlite3.connect(f'{const.DB_NAME}.db', check_same_thread=False)
     return connection
 
 

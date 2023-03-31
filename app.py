@@ -1,30 +1,27 @@
+import sys
+import pandas as pd
 from datetime import datetime
 from flask import Flask, request
+import requests
 from flask_restx import Api, Resource, fields
 from util.sql import execute_query
+import util.validation as validation
+import util.constants as const
+
+if len(sys.argv) != 3:
+    print(const.USAGE_MESSAGE)
+    sys.exit(1)
 
 app = Flask(__name__)
 api = Api(app,
-          default="Events",
-          title="Events API",
-          description="Time-management and scheduling calendar service (Google Calendar) for Australians.")  # Documentation Description)
+          default=const.API_NAME,
+          title=const.API_NAME,
+          description=const.API_DESCRIPTION,)
 
-execute_query(
-    """
-        CREATE TABLE IF NOT EXISTS events (
-            event_id INTEGER PRIMARY KEY,
-            name TEXT,
-            date DATE,
-            time_from TIME,
-            time_to TIME,
-            street TEXT,
-            suburb TEXT,
-            state TEXT,
-            post_code TEXT,
-            description TEXT,
-            last_update DATETIME
-        )
-    """)
+au_df = pd.read_csv(sys.argv[2])
+georef_df = pd.read_csv(sys.argv[1], delimiter=';')
+
+execute_query(const.SCHEMA)
 
 # Schema of an event
 event_model = api.model('Event', {
@@ -41,7 +38,6 @@ event_model = api.model('Event', {
     "description": fields.String(example="The cake is a lie")
 })
 
-
 @api.route('/events')
 class CreateEvent(Resource):
 
@@ -51,6 +47,12 @@ class CreateEvent(Resource):
     @api.expect(event_model, validate=True)
     def post(self):
         request_data = request.json
+
+        # Validate request data
+        validation_errors = validation.all_data(request_data)
+        if validation_errors:
+            return {"Errors": validation_errors}, 400
+        
         overlap_query = "SELECT * FROM events WHERE date = ? AND time_from < ? AND time_to > ?"
         overlap_params = (request_data['date'],
                           request_data['to'], request_data['from'])
@@ -75,6 +77,7 @@ class Events(Resource):
 
     @api.response(200, 'Successfully retrieved event')
     @api.response(404, 'Event not found')
+    @api.response(502, 'Error getting holiday data from NagerDate')
     @api.doc(description="Get all books")
     def get(self, id):
         event = execute_query(
@@ -87,20 +90,44 @@ class Events(Resource):
         next_event = execute_query(
             "SELECT * FROM events WHERE date > ? OR (date = ? AND time_from > ?) ORDER BY date ASC, time_from ASC LIMIT 1", (event[2], event[2], event[4]))
 
+        # Get links data
         links = {
             'self': {
                 'href': f'/events/{str(id)}'
             }
         }
-
         if previous_event:
             links['previous'] = {
-                'href': f'/events/{str(previous_event[0][0])}'
-            }
+                'href': f'/events/{str(previous_event[0][0])}'}
         if next_event:
-            links['next'] = {
-                'href': f'/events/{str(next_event[0][0])}'
-            }
+            links['next'] = {'href': f'/events/{str(next_event[0][0])}'}
+
+        # Get holiday and weekend data
+        metadata = {}
+        metadata['weekend'] = datetime.strptime(
+            event[2], '%Y-%m-%d').date().weekday() >= 5
+        url = f"https://date.nager.at/api/v2/publicholidays/{datetime.now().year}/AU"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            for holiday in data:
+                if holiday['date'] == event[2]:
+                    metadata['holiday'] = holiday['name']
+                    break
+        else:
+            return {"Error": "Error getting holiday data from NagerDate"}, 502
+
+        # Get weather data
+        # lng	[deg, float] WGS84 coordinates of the site.
+        # lat	[deg, float] WGS84 coordinates of the site.
+        # https://www.7timer.info/bin/civil.php?lat=-33.865143&lng=151.209900&ac=1&unit=metric&output=json&product=two
+            # "_metadata": {
+            #     "wind-speed": "data[wind10m['speed']] KM",
+            #     "weather": "data['weather']",
+            #     "humidity": "data['rh2m']",
+            #     "temperature": "data['temp2m'] °C",
+            # },
+        # if the date is within the next 7 days then get the weather data
 
         return {
             'id': event[0],
@@ -116,14 +143,7 @@ class Events(Resource):
                 'post-code': event[8]
             },
             'description': event[9],
-            "_metadata": {
-                "wind-speed": "XXX",
-                "weather": "XXX",
-                "humidity": "XXX",
-                "temperature": "XXX",
-                "holiday": "XXX",
-                "weekend": "XXX"
-            },
+            '_metadata': metadata,
             '_links': links
         }, 200
 
