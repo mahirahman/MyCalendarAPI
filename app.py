@@ -1,44 +1,43 @@
 import pandas as pd
 import json
 import sqlite3
+from datetime import datetime
 from flask import Flask, request
 from flask_restx import Resource, Api, fields
 
 app = Flask(__name__)
 api = Api(app)
-connection = sqlite3.connect('z5364199.db')
-cursor = connection.cursor()
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS events(
-        event_id INTEGER PRIMARY KEY,
-        name TEXT,
-        date TEXT,
-        time_from TEXT,
-        time_to TEXT,
-        street TEXT,
-        suburb TEXT,
-        state TEXT,
-        post_code INTEGER,
-        description TEXT
-    )
-""")
 
-# populate db with sample data
-cursor.execute("""INSERT INTO events VALUES(1, "Birthday Party", "01-01-2000", "16:00", "20:00", "215B Night Av", "Kensington", "NSW", 2033, "The cake is a lie")""")
-# populate db with sample data
-cursor.execute("""INSERT INTO events VALUES(2, "Birthday Party 123", "01-01-2000", "16:00", "20:00", "215B Night Av", "Kensington", "NSW", 2033, "The cake is a lie")""")
+connection = sqlite3.connect('z5364199.db', check_same_thread=False)
+with connection:
+    cursor = connection.cursor()
+    cursor.execute("""
+                   CREATE TABLE IF NOT EXISTS events(
+                       event_id INTEGER PRIMARY KEY,
+                       name TEXT,
+                       date DATE,
+                       time_from TIME,
+                       time_to TIME,
+                       street TEXT,
+                       suburb TEXT,
+                       state TEXT,
+                       post_code TEXT,
+                       description TEXT
+                   )
+                   """)
+    connection.commit()
 
 # Schema of an event
 eventModel = api.model('Event', {
     "name": fields.String(example="Birthday Party"),
-    "date": fields.Date(example="01-01-2000"),
-    "from": fields.String(example="16:00"),
-    "to": fields.String(example="20:00"),
+    "date": fields.Date(example="2000-01-01"),
+    "from": fields.String(example="16:00:00"),
+    "to": fields.String(example="20:00:00"),
     "location": fields.Nested(api.model('Location', {
         'street': fields.String(example="215B Night Av"),
         'suburb': fields.String(example="Kensington"),
         'state': fields.String(example="NSW"),
-        'post-code': fields.Integer(example="2033")
+        'post-code': fields.String(example="2033")
     })),
     "description": fields.String(example="The cake is a lie")
 })
@@ -53,30 +52,24 @@ class Event(Resource):
     @api.expect(eventModel, validate=False)
     def post(self):
         eventBody = request.json
+        isOverlap = pd.read_sql_query("""SELECT * FROM events WHERE date = ? AND time_from < ? AND time_to > ?""",
+                                      connection, params=(eventBody['date'], eventBody['to'], eventBody['from'],))
 
-        # Your API should not allow adding a new event, or modifying an event if it has overlapping time with other events. For instance, one event can finish at 16:00 on the same day that another starts at 16:00, it cannot start at 15:45.
-        # if db is not empty and event overlaps with another event
-        if (cursor.execute("""SELECT * FROM events""").fetchone() is not None and cursor.execute("""SELECT * FROM events WHERE date=? AND time_from<? AND time_to>?""", (eventBody['date'], eventBody['from'], eventBody['to'])).fetchone() is not None):
-            return {"Error": "Event overlaps with another event"}, 400
+        if not isOverlap.empty:
+            return {"Error": "Event overlaps with another event", "Overlap": isOverlap.to_json()}, 400
 
-        # event is valid, get total number of records + 1 for eventID, add to db
-        cursor.execute("""SELECT COUNT(*) FROM events""")
-        eventID = cursor.fetchone()[0] + 1
-        cursor.execute("""INSERT INTO events VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (eventID, eventBody['name'], eventBody['date'], eventBody['from'], eventBody[
-                       'to'], eventBody['location']['street'], eventBody['location']['suburb'], eventBody['location']['state'], eventBody['location']['post-code'], eventBody['description']))
-
-        # 201 Created
-        # {
-        #     "id" : 123,
-        #     "last-update": "2023-04-08 12:34:40",
-        #     "_links": {
-        #         "self": {
-        #           "href": "/events/123"
-        #         }
-        #     }
-        # }
-        return {'id': 123, 'last-update': 'time when record created', '_links': {'self': {'href': '/events/123'}}}, 201
+        eventId = pd.read_sql_query(
+            "SELECT COUNT(*) FROM events", connection).iloc[0, 0] + 1
+        with connection:
+            cursor = connection.cursor()
+            cursor.execute("""
+                           INSERT INTO events VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           """, (eventBody['name'], eventBody['date'], eventBody['from'], eventBody['to'],
+                                 eventBody['location']['street'], eventBody['location']['suburb'], eventBody['location']['state'],
+                                 eventBody['location']['post-code'], eventBody['description']))
+            connection.commit()
+        return {'id': int(eventId), 'last-update': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '_links': {'self': {'href': f'/events/{str(eventId)}'}}}, 201
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)
