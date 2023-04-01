@@ -18,7 +18,10 @@ def date(date_str):
 def time(time_str):
     try:
         datetime.strptime(time_str, '%H:%M:%S')
-        return True
+        if len(time_str) == 8:
+            return True
+        else:
+            return False
     except ValueError:
         return False
   
@@ -40,22 +43,25 @@ def state(state_str):
 # Validate all data fields in a request
 def all_data(data):
     errors = {}
-    if not string(data['name']):
+    if 'name' in data and not string(data['name']):
         errors['name'] = const.INVALID_NAME_MSG.format(data['name'])
-    if not date(data['date']):
+    if 'date' in data and not date(data['date']):
         errors['date'] = const.INVALID_DATE_MSG.format(data['date'])
-    if not time(data['from']) or not time(data['to']):
+    if 'from' in data and 'to' in data and (not time(data['from']) or not time(data['to'])):
         errors['from'] = const.INVALID_TIME_MSG
-    elif not time_range(data['from'], data['to']):
+    elif 'from' in data and 'to' in data and not time_range(data['from'], data['to']):
         errors['time_range'] = const.INVALID_TIME_RANGE_MSG
-    if not string(data['location']['street']):
+    if 'location' in data and 'street' in data['location'] and not string(data['location']['street']):
         errors['street'] = const.INVALID_STREET_MSG.format(data['location']['street'])
-    if not string(data['location']['suburb']):
+    if 'location' in data and 'suburb' in data['location'] and not string(data['location']['suburb']):
         errors['suburb'] = const.INVALID_SUBURB_MSG.format(data['location']['suburb'])
-    if not postcode(data['location']['post-code']):
+    if 'location' in data and 'post-code' in data['location'] and not postcode(data['location']['post-code']):
         errors['post-code'] = const.INVALID_POSTCODE_MSG.format(data['location']['post-code'])
-    if not state(data['location']['state']):
+    if 'location' in data and 'state' in data['location'] and not state(data['location']['state']):
         errors['state'] = const.INVALID_STATE_MSG.format(data['location']['state'])
-    if not string(data['description']):
+    if 'description' in data and not string(data['description']):
         errors['description'] = const.INVALID_DESCRIPTION_MSG.format(data['description'])
+    if not data:
+        errors['data'] = 'No payload data provided'
     return errors
+

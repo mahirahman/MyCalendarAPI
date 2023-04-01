@@ -1,6 +1,6 @@
 import sys
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request
 import requests
 from flask_restx import Api, Resource, fields
@@ -18,10 +18,10 @@ api = Api(app,
           title=const.API_NAME,
           description=const.API_DESCRIPTION,)
 
+execute_query(const.SCHEMA)
+
 au_df = pd.read_csv(sys.argv[2])
 georef_df = pd.read_csv(sys.argv[1], delimiter=';')
-
-execute_query(const.SCHEMA)
 
 # Schema of an event
 event_model = api.model('Event', {
@@ -37,6 +37,18 @@ event_model = api.model('Event', {
     })),
     "description": fields.String(example="The cake is a lie")
 })
+
+def get_start_time_in_dataseries():
+    # Convert the current time to format: 16:29:00
+    curr_time = datetime.now().strftime('%H:%M:%S')
+    INIT_TIME = datetime.strptime('11:00:00', '%H:%M:%S').time()
+    # Find the time difference between curr_time and CONST_TIME
+    time_diff = datetime.combine(datetime.today(), datetime.strptime(str(curr_time), '%H:%M:%S').time()) - datetime.combine(datetime.today(), INIT_TIME)
+    # Convert the time difference to hours
+    time_diff_hours = time_diff.total_seconds() / 3600
+    # Calculate the starting time for the first item in the dataseries list
+    starting_time = (datetime.combine(datetime.today(), datetime.time(datetime(1,1,1,11,0))) + timedelta(hours=int(time_diff_hours // 3) * 3)).time()
+    return starting_time
 
 @api.route('/events')
 class CreateEvent(Resource):
@@ -64,7 +76,6 @@ class CreateEvent(Resource):
 
         if is_overlap:
             return {"Error": "Event overlaps with another event"}, 400
-
         event_id = execute_query("SELECT COUNT(*) FROM events")[0][0] + 1
         curr_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         insert_query = "INSERT INTO events VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -81,8 +92,8 @@ class Events(Resource):
 
     @api.response(200, 'Successfully Retrieved Event')
     @api.response(404, 'Event Not Found')
-    @api.response(502, 'Error Getting Holiday Data From NagerDate')
-    @api.doc(description="Get All Books")
+    @api.response(500, 'Error Getting Data From External API')
+    @api.doc(description="Get an Event by ID")
     def get(self, id):
         event = execute_query(
             "SELECT * FROM events WHERE event_id = ?", (id,))[0]
@@ -119,19 +130,49 @@ class Events(Resource):
                     metadata['holiday'] = holiday['name']
                     break
         else:
-            return {"Error": "Error getting holiday data from NagerDate"}, 502
-
+            return {"Error": "Error getting holiday data from NagerDate"}, 500
+        
         # Get weather data
-        # lng	[deg, float] WGS84 coordinates of the site.
-        # lat	[deg, float] WGS84 coordinates of the site.
-        # https://www.7timer.info/bin/civil.php?lat=-33.865143&lng=151.209900&ac=1&unit=metric&output=json&product=two
-            # "_metadata": {
-            #     "wind-speed": "data[wind10m['speed']] KM",
-            #     "weather": "data['weather']",
-            #     "humidity": "data['rh2m']",
-            #     "temperature": "data['temp2m'] °C",
-            # },
-        # if the date is within the next 7 days then get the weather data
+        event_date_time = datetime.strptime(event[2], '%Y-%m-%d').date()
+        date_diff = (event_date_time - datetime.today().date()).days
+        start_time = get_start_time_in_dataseries()
+        start_datetime = datetime.combine(datetime.today().date(), start_time)
+        from_time = datetime.strptime(event[3], '%H:%M:%S').time()
+        event_datetime = datetime.combine(event_date_time, from_time)
+        # Check if event is within 7 days and start_time does not take place before event_datetime
+        if date_diff <= 7 and date_diff >= 0 and event_datetime >= start_datetime:
+            # Get lat and lng from Suburb and State
+            df = georef_df[['Geo Point', 'Official Name Suburb', 'Official Name State']].dropna()
+            rows = df[df['Official Name Suburb'].str.contains(event[6]) & df['Official Name State'].str.contains(const.STATE_ABBREVIATIONS[event[7]])]
+            # Check if row dataframe is not empty
+            if not rows.empty:
+                # Get the first row from row dataframe
+                row = rows.iloc[0]
+                lat = row['Geo Point'].split(',')[0].replace(' ', '')
+                lng = row['Geo Point'].split(',')[1].replace(' ', '')
+                url = f"https://www.7timer.info/bin/civil.php?lon={lng}&lat={lat}&lang=en&ac=0&unit=metric&output=json"
+                print(url)
+                response = requests.get(url)
+                if response.status_code == 200:
+                    dataseries = response.json().get('dataseries')
+                    event_start_time = from_time
+                    first_element = datetime.combine(datetime.today().date(), start_time)
+                    # Keep adding 3 hours to first_element until the date is equal to event[2] and time is greater than event[3]
+                    count = 0
+                    while first_element.date() < event_date_time or first_element.time() <= from_time:
+                        first_element += timedelta(hours=3)
+                        count += 1
+                    metadata['cloud-cover'] = const.CLOUD_COVER.get(dataseries[count].get('cloudcover'))
+                    metadata['precepitation-type'] = const.PRECEPICTION_TYPE.get(dataseries[count].get('prec_type'))
+                    prec_amount = const.PRECEPICTION_RATE.get(dataseries[count].get('prec_amount'))
+                    if prec_amount != 'None':
+                        metadata['precepitation-rate'] = prec_amount
+                    metadata['wind-speed'] = const.WEATHER_SPEED.get(dataseries[count].get('wind10m').get('speed'))
+                    metadata['weather'] = const.WEATHER_CONDITION.get(dataseries[count].get('weather'))
+                    metadata['humidity'] = dataseries[count].get('rh2m')
+                    metadata['temperature'] = f"{dataseries[count].get('temp2m')} °C"
+                else:
+                    return {"Error": "Error getting weather data from 7Timer"}, 500
 
         return {
             'id': event[0],
@@ -155,8 +196,7 @@ class Events(Resource):
     @api.response(200, 'Event Deleted Successfully')
     @api.doc(description="Delete an Event By Its ID")
     def delete(self, id):
-        event = execute_query(
-            "SELECT * FROM events WHERE event_id = ?", (id,))[0]
+        event = execute_query("SELECT * FROM events WHERE event_id = ?", (id,))
         if not event:
             return {"Error": f"Event {id} doesn't exist"}, 404
 
@@ -177,13 +217,43 @@ class Events(Resource):
         location_data = request_data.get('location', {})
         if not set(location_data.keys()).issubset(const.LOCATION_FIELDS):
             return {"Error": "Invalid location fields provided"}, 400
-        # if pass then check if all the fields are valid
-        #
-        # if pass then check if the event overlaps with another event
-        #
+        # Validate request data
+        validation_errors = validation.all_data(request_data)
+        if validation_errors:
+            return {"Errors": validation_errors}, 400
+        # Check if the event overlaps with another event
+        overlap_query = "SELECT * FROM events WHERE date = ? AND time_from < ? AND time_to > ?"
+        overlap_params = (
+            request_data['date'] if 'date' in data_keys else execute_query("SELECT date FROM events WHERE event_id = ?", (id,)[0][0]), 
+            request_data['to'] if 'to' in data_keys else execute_query("SELECT time_to FROM events WHERE event_id = ?", (id,)[0][0]),
+            request_data['from'] if 'from' in data_keys else execute_query("SELECT time_from FROM events WHERE event_id = ?", (id,)[0][0]),
+        )
+
+        is_overlap = execute_query(overlap_query, overlap_params)
+        if is_overlap:
+            return {"Error": "Event overlaps with another event"}, 400
+
+        # Update event in database
+        curr_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        update_query = "UPDATE events SET name = ?, date = ?, time_from = ?, time_to = ?, street = ?, suburb = ?, state = ?, post_code = ?, description = ?, last_update = ? WHERE event_id = ?"
+        update_params = (
+            request_data['name'] if 'name' in data_keys else execute_query("SELECT name FROM events WHERE event_id = ?", (id,))[0][0],
+            request_data['date'] if 'date' in data_keys else execute_query("SELECT date FROM events WHERE event_id = ?", (id,))[0][0],
+            request_data['from'] if 'from' in data_keys else execute_query("SELECT time_from FROM events WHERE event_id = ?", (id,))[0][0],
+            request_data['to'] if 'to' in data_keys else execute_query("SELECT time_to FROM events WHERE event_id = ?", (id,))[0][0],
+            location_data['street'] if 'street' in location_data.keys() else execute_query("SELECT street FROM events WHERE event_id = ?", (id,))[0][0],
+            location_data['suburb'] if 'suburb' in location_data.keys() else execute_query("SELECT suburb FROM events WHERE event_id = ?", (id,))[0][0],
+            location_data['state'] if 'state' in location_data.keys() else execute_query("SELECT state FROM events WHERE event_id = ?", (id,))[0][0],
+            location_data['post-code'] if 'post-code' in location_data.keys() else execute_query("SELECT post_code FROM events WHERE event_id = ?", (id,))[0][0],
+            request_data['description'] if 'description' in data_keys else execute_query("SELECT description FROM events WHERE event_id = ?", (id,))[0][0],
+            curr_time,
+            id
+        )
+        execute_query(update_query, update_params)
+        
         return {
             "id" : id,  
-            "last-update": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "last-update": curr_time,
             "_links": {
                 "self": {
                     "href": f"/events/{id}"
