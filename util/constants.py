@@ -123,4 +123,3 @@ WEATHER_CONDITION = {
     "tsrainday": "Lifted Index less than -5 with precipitation rate over 4mm/hr",
     "tsrainnight": "Lifted Index less than -5 with precipitation rate over 4mm/hr"
 }
-

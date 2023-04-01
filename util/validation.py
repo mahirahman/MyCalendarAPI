@@ -4,7 +4,7 @@ import re
 
 # Validate String
 def string(str):
-  return len(str) > 0 and len(str) <= 64
+    return len(str) > 0 and len(str) <= 64
 
 # Validate Date
 def date(date_str):
@@ -24,7 +24,7 @@ def time(time_str):
             return False
     except ValueError:
         return False
-  
+
 # Validate Time Range
 def time_range(from_time_str, to_time_str):
     from_time = datetime.strptime(from_time_str, '%H:%M:%S')
@@ -33,7 +33,7 @@ def time_range(from_time_str, to_time_str):
 
 # Validate Postcode
 def postcode(postcode_str):
-  return bool(re.match(r'^\d{4}$', postcode_str))
+    return bool(re.match(r'^\d{4}$', postcode_str))
 
 # Validate State
 def state(state_str):
@@ -47,21 +47,32 @@ def all_data(data):
         errors['name'] = const.INVALID_NAME_MSG.format(data['name'])
     if 'date' in data and not date(data['date']):
         errors['date'] = const.INVALID_DATE_MSG.format(data['date'])
-    if 'from' in data and 'to' in data and (not time(data['from']) or not time(data['to'])):
+    if 'from' in data and 'to' in data and (
+        not time(
+            data['from']) or not time(
+            data['to'])):
         errors['from'] = const.INVALID_TIME_MSG
     elif 'from' in data and 'to' in data and not time_range(data['from'], data['to']):
         errors['time_range'] = const.INVALID_TIME_RANGE_MSG
-    if 'location' in data and 'street' in data['location'] and not string(data['location']['street']):
-        errors['street'] = const.INVALID_STREET_MSG.format(data['location']['street'])
-    if 'location' in data and 'suburb' in data['location'] and not string(data['location']['suburb']):
-        errors['suburb'] = const.INVALID_SUBURB_MSG.format(data['location']['suburb'])
-    if 'location' in data and 'post-code' in data['location'] and not postcode(data['location']['post-code']):
-        errors['post-code'] = const.INVALID_POSTCODE_MSG.format(data['location']['post-code'])
-    if 'location' in data and 'state' in data['location'] and not state(data['location']['state']):
-        errors['state'] = const.INVALID_STATE_MSG.format(data['location']['state'])
+    if 'location' in data and 'street' in data['location'] and not string(
+            data['location']['street']):
+        errors['street'] = const.INVALID_STREET_MSG.format(
+            data['location']['street'])
+    if 'location' in data and 'suburb' in data['location'] and not string(
+            data['location']['suburb']):
+        errors['suburb'] = const.INVALID_SUBURB_MSG.format(
+            data['location']['suburb'])
+    if 'location' in data and 'post-code' in data['location'] and not postcode(
+            data['location']['post-code']):
+        errors['post-code'] = const.INVALID_POSTCODE_MSG.format(
+            data['location']['post-code'])
+    if 'location' in data and 'state' in data['location'] and not state(
+            data['location']['state']):
+        errors['state'] = const.INVALID_STATE_MSG.format(
+            data['location']['state'])
     if 'description' in data and not string(data['description']):
-        errors['description'] = const.INVALID_DESCRIPTION_MSG.format(data['description'])
+        errors['description'] = const.INVALID_DESCRIPTION_MSG.format(
+            data['description'])
     if not data:
         errors['data'] = 'No payload data provided'
     return errors
-
