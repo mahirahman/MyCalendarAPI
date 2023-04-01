@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from flask import Flask, request
 import requests
-from flask_restx import Api, Resource, fields
+from flask_restx import Api, Resource, fields, reqparse
 from util.sql import execute_query
 import util.validation as validation
 import util.constants as const
@@ -22,6 +22,9 @@ execute_query(const.SCHEMA)
 
 au_df = pd.read_csv(sys.argv[2])
 georef_df = pd.read_csv(sys.argv[1], delimiter=';')
+
+statistics_parser = reqparse.RequestParser()
+statistics_parser.add_argument('format', type=str, required=True, help='Format of the statistics, can be either "json" or "image"')
 
 # Schema of an event
 event_model = api.model('Event', {
@@ -84,7 +87,6 @@ class CreateEvent(Resource):
                          request_data['location']['post-code'], request_data['description'], curr_time)
         execute_query(insert_query, insert_params)
         return {'id': int(event_id), 'last-update': curr_time, '_links': {'self': {'href': f'/events/{str(event_id)}'}}}, 201
-
 
 @api.route('/events/<int:id>')
 @api.param('id', 'The Event identifier')
@@ -260,6 +262,37 @@ class Events(Resource):
                 }
             }
         }, 200
+
+@api.route('/events/statistics')
+class Statistics(Resource):
+
+    @api.expect(statistics_parser)
+    @api.response(200, 'Successfully Retrieved Event Statistics')
+    @api.response(400, 'Validation Error')
+    @api.doc(description="Get Event Statistics")
+    def get(self):
+        # Validate it is either json or image string
+        args = statistics_parser.parse_args()
+        if args['format'] not in ['json', 'image']:
+            return {"Error": "Invalid format provided"}, 400
+
+        # When the format is an image, your operation should return an image (can be in any image format) and the image illustrates the requested information in a visualization (apply all your knowledge when creating the visualization such as choosing appropriate visualization type and making sure that it is human-readable, clear, and informative).
+
+        # Number of events per day
+        # Total Number of events
+        # Total Number of events in current calendar Week (Today to Sunday), and current calendar Month (1st to the last day of the month)
+
+        return { 
+            "total": 10,
+            "total-current-week": 5,
+            "total-current-month" : 8,
+            "per-days" : { "10-04-2023": 3, "11-04-2023": 2, "18-04-2023":3, "18-05-2023":2}
+            }, 200
+
+
+
+
+
 
 
 if __name__ == '__main__':
