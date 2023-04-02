@@ -8,7 +8,7 @@ USAGE_MESSAGE = 'Usage: python3 z5364199.py georef-australia-state-suburb.csv au
 SCHEMA = (
     """
         CREATE TABLE IF NOT EXISTS events (
-            event_id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             name TEXT,
             date DATE,
             time_from TIME,
@@ -23,6 +23,7 @@ SCHEMA = (
     """)
 
 FIELDS = {'name', 'date', 'from', 'to', 'location', 'description'}
+FILTER_FIELDS = {'id', 'name', 'date', 'from', 'to', 'location'}
 LOCATION_FIELDS = {'street', 'suburb', 'state', 'post-code'}
 
 # Error messages
