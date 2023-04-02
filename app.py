@@ -5,14 +5,15 @@ from collections import defaultdict
 import sys
 import re
 import sqlite3
-from flask import Flask, request, Response
-from flask_restx import Api, Resource, fields, reqparse
+import math
 import pandas as pd
 import matplotlib.pyplot as plt
 import requests
-from util.sql import execute_query
 import util.validation as validation
 import util.constants as const
+from flask import Flask, request, Response
+from flask_restx import Api, Resource, fields, reqparse
+from util.sql import execute_query
 
 if len(sys.argv) != 3:
     print(const.USAGE_MESSAGE)
@@ -45,26 +46,6 @@ event_model = api.model('Event', {
 
 @api.route('/events')
 class CreateEvent(Resource):
-
-    order_parser = reqparse.RequestParser()
-    order_parser.add_argument(
-        'order',
-        type=str,
-        help="Sort order - comma-separated value to sort the list based on the given criteria.\
-        The string consists of two parts: the first part is a special character '+' or '-' where\
-        '+' indicates ordering ascendingly, and '-' indicates ordering descendingly. The second\
-        part is an attribute name which is one of {id, name, datetime, date, time_from, time_to,\
-        street, suburb, state, post_code, description, last_update}",
-        default='+id')
-    order_parser.add_argument('page', type=int, help='Page number', default=1)
-    order_parser.add_argument('size', type=int, help='Page size', default=10)
-    order_parser.add_argument(
-        'filter',
-        type=str,
-        help='Fields to include in response - comma-separated value (combination of: id, name,\
-            date, from, to, and location), and shows what attribute should be shown for each\
-            event accordingly.',
-        default='id,name')
 
     @api.response(201, 'Event Created Successfully')
     @api.response(400, 'Validation Error')
@@ -110,6 +91,26 @@ class CreateEvent(Resource):
         execute_query(insert_query, insert_params)
         return {'id': int(event_id), 'last-update': curr_time,
                 '_links': {'self': {'href': f'/events/{str(event_id)}'}}}, 201
+
+    order_parser = reqparse.RequestParser()
+    order_parser.add_argument(
+        'order',
+        type=str,
+        help="Sort order - comma-separated value to sort the list based on the given criteria.\
+        The string consists of two parts: the first part is a special character '+' or '-' where\
+        '+' indicates ordering ascendingly, and '-' indicates ordering descendingly. The second\
+        part is an attribute name which is one of {id, name, datetime, date, time_from, time_to,\
+        street, suburb, state, post_code, description, last_update}",
+        default='+id')
+    order_parser.add_argument('page', type=int, help='Page number', default=1)
+    order_parser.add_argument('size', type=int, help='Page size', default=10)
+    order_parser.add_argument(
+        'filter',
+        type=str,
+        help='Fields to include in response - comma-separated value (combination of: id, name,\
+            date, from, to, and location), and shows what attribute should be shown for each\
+            event accordingly.',
+        default='id,name')
 
     @api.response(200, 'Successfully Retrieved All Events')
     @api.response(400, 'Validation Error')
@@ -159,10 +160,24 @@ class CreateEvent(Resource):
                 ORDER BY {order_string}\
                 LIMIT {arg_size}\
                 OFFSET {(arg_page - 1) * arg_size}")
+            # get total number of events from db
+            total = execute_query("SELECT COUNT(*) FROM events")[0][0]
         except sqlite3.Error as e:
             return str(e), 400
         if not result:
             return {"Error": f"No events found on page {arg_page}"}, 404
+
+        # using total and result, calculate the number of pages possible
+        links = {
+            "self": {
+                "href": f"/events?order={arg_order}&page={arg_page}&size={arg_size}&filter={arg_filter}",
+            },
+        }
+        num_pages = math.ceil(total / arg_size)
+        if arg_page < num_pages:
+            links["next"] = {
+                "href": f"/events?order={arg_order}&page={arg_page + 1}&size={arg_size}&filter={arg_filter}",
+            }
 
         events = []
         for row in result:
@@ -174,15 +189,8 @@ class CreateEvent(Resource):
             "page": arg_page,
             "page-size": arg_size,
             "events": events,
-            "_links": {
-                "self": {
-                    "href": f"/events?order={arg_order}&page={arg_page}\
-                        &size={arg_size}&filter={arg_filter}",
-                },
-                "next": {
-                    "href": f"/events?order={arg_order}&page={arg_page + 1}\
-                        &size={arg_size}&filter={arg_filter}",
-                }}}
+            "_links": links,
+        }, 200
 
 
 @api.route('/events/<int:id>')
