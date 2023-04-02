@@ -35,6 +35,13 @@ statistics_parser.add_argument(
     required=True,
     help='Format of the statistics, can be either "json" or "image"')
 
+date_parser = reqparse.RequestParser()
+date_parser.add_argument(
+    'date',
+    type=str,
+    required=True,
+    help='Date in the format "YYYY-MM-DD"')
+
 # Schema of an event
 event_model = api.model('Event', {
     "name": fields.String(example="Birthday Party"),
@@ -89,7 +96,7 @@ class CreateEvent(Resource):
 
     @api.response(201, 'Event Created Successfully')
     @api.response(400, 'Validation Error')
-    @api.doc(description="Create a New Event")
+    @api.doc(description="Create A New Event")
     @api.expect(event_model, validate=True)
     def post(self):
         request_data = request.json
@@ -140,7 +147,7 @@ class Events(Resource):
     @api.response(200, 'Successfully Retrieved Event')
     @api.response(404, 'Event Not Found')
     @api.response(500, 'Error Getting Data From External API')
-    @api.doc(description="Get an Event by ID")
+    @api.doc(description="Get An Event By ID")
     def get(self, id):
         event = execute_query(
             "SELECT * FROM events WHERE event_id = ?", (id,))
@@ -212,6 +219,7 @@ class Events(Resource):
                 lat = row['Geo Point'].split(',')[0].replace(' ', '')
                 lng = row['Geo Point'].split(',')[1].replace(' ', '')
                 url = f"https://www.7timer.info/bin/civil.php?lon={lng}&lat={lat}&lang=en&ac=0&unit=metric&output=json"
+                print(url)
                 response = requests.get(url)
                 if response.status_code == 200:
                     dataseries = response.json().get('dataseries')
@@ -261,7 +269,7 @@ class Events(Resource):
 
     @api.response(404, 'Event Was Not Found')
     @api.response(200, 'Event Deleted Successfully')
-    @api.doc(description="Delete an Event By Its ID")
+    @api.doc(description="Delete An Event By Its ID")
     def delete(self, id):
         event = execute_query("SELECT * FROM events WHERE event_id = ?", (id,))
         if not event:
@@ -274,7 +282,7 @@ class Events(Resource):
     @api.response(404, 'Event Was Not Found')
     @api.response(200, 'Event Updated Successfully')
     @api.response(400, 'Validation Error')
-    @api.doc(description="Update an Event By Its ID")
+    @api.doc(description="Update An Event By Its ID")
     @api.expect(event_model, validate=True)
     def patch(self, id):
         request_data = request.json
@@ -426,6 +434,18 @@ class Statistics(Resource):
             buffer.seek(0)
             return Response(buffer.getvalue(), mimetype='image/png')
 
+@api.route('/weather')
+class Weather(Resource):
+    @api.expect(date_parser)
+    @api.response(200, 'Successfully Retrieved Weather')
+    @api.response(400, 'Validation Error')
+    @api.doc(description="Get The Weather Of Each Capital City")
+    def get(self):
+        # Validate the date is in the correct format and within 7 days
+        # Get the lat and lng from all the popular locations and store them in a dict
+        # ping the weather API and get the weather for each location
+        # display the weather for each location on the map
+        return None
 
 if __name__ == '__main__':
     app.run(debug=False)

@@ -36,7 +36,7 @@ INVALID_POSTCODE_MSG = "{} is not a valid Australian postcode"
 INVALID_STATE_MSG = "{} is not a valid Australian state"
 INVALID_DESCRIPTION_MSG = "{} is an invalid description. Please use a description with 1-64 characters"
 
-# State abbreviations
+# Location Data
 STATE_ABBREVIATIONS = {
     'NSW': 'New South Wales',
     'VIC': 'Victoria',
@@ -48,17 +48,19 @@ STATE_ABBREVIATIONS = {
     'ACT': 'Australian Capital Territory'
 }
 
+POPULAR_LOCATIONS = ['Sydney', 'Canberra', 'Melbourne', 'Brisbane', 'Perth', 'Adelaide', 'Hobart', 'Darwin', 'Broome', 'Alice Springs', 'Cairns']
+
 # Weather Data
 CLOUD_COVER = {
-    1: f'0%-6%',
-    2: f'6%-19%',
-    3: f'19%-31%',
-    4: f'31%-44%',
-    5: f'44%-56%',
-    6: f'56%-69%',
-    7: f'69%-81%',
-    8: f'81%-94%',
-    9: f'94%-100%'
+    1: '0%-6%',
+    2: '6%-19%',
+    3: '19%-31%',
+    4: '31%-44%',
+    5: '44%-56%',
+    6: '56%-69%',
+    7: '69%-81%',
+    8: '81%-94%',
+    9: '94%-100%'
 }
 
 PRECEPICTION_TYPE = {
@@ -96,18 +98,18 @@ WEATHER_SPEED = {
 WEATHER_CONDITION = {
     "clearday": "Total cloud cover less than 20%",
     "clearnight": "Total cloud cover less than 20%",
-    "pcloudyday": f"Total cloud cover between 20%-60%",
-    "pcloudynight": f"Total cloud cover between 20%-60%",
-    "mcloudyday": f"Total cloud cover between 60%-80%",
-    "mcloudynight": f"Total cloud cover between 60%-80%",
+    "pcloudyday": "Total cloud cover between 20%-60%",
+    "pcloudynight": "Total cloud cover between 20%-60%",
+    "mcloudyday": "Total cloud cover between 60%-80%",
+    "mcloudynight": "Total cloud cover between 60%-80%",
     "cloudyday": "Total cloud cover over over 80%",
     "cloudynight": "Total cloud cover over over 80%",
     "humidday": "Relative humidity over 90% with total cloud cover less than 60%",
     "humidnight": "Relative humidity over 90% with total cloud cover less than 60%",
     "lightrainday": "Precipitation rate less than 4mm/hr with total cloud cover more than 80%",
     "lightrainnight": "Precipitation rate less than 4mm/hr with total cloud cover more than 80%",
-    "oshowerday": f"Precipitation rate less than 4mm/hr with total cloud cover between 60%-80%",
-    "oshowernight": f"Precipitation rate less than 4mm/hr with total cloud cover between 60%-80%",
+    "oshowerday": "Precipitation rate less than 4mm/hr with total cloud cover between 60%-80%",
+    "oshowernight": "Precipitation rate less than 4mm/hr with total cloud cover between 60%-80%",
     "ishowerday": "Precipitation rate less than 4mm/hr with total cloud cover less than 60%",
     "ishowernight": "Precipitation rate less than 4mm/hr with total cloud cover less than 60%",
     "lightsnowday": "Precipitation rate less than 4mm/hr",
