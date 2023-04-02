@@ -23,6 +23,7 @@ SCHEMA = (
     """)
 
 FIELDS = {'name', 'date', 'from', 'to', 'location', 'description'}
+ORDER_FIELDS = {'id', 'name', 'datetime'}
 FILTER_FIELDS = {'id', 'name', 'date', 'from', 'to', 'location'}
 LOCATION_FIELDS = {'street', 'suburb', 'state', 'post-code'}
 

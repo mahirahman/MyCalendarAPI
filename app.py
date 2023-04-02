@@ -99,8 +99,7 @@ class CreateEvent(Resource):
         help="Sort order - comma-separated value to sort the list based on the given criteria.\
         The string consists of two parts: the first part is a special character '+' or '-' where\
         '+' indicates ordering ascendingly, and '-' indicates ordering descendingly. The second\
-        part is an attribute name which is one of {id, name, datetime, date, time_from, time_to,\
-        street, suburb, state, post_code, description, last_update}",
+        part is an attribute name which is one of {id, name, datetime}",
         default='+id')
     order_parser.add_argument('page', type=int, help='Page number', default=1)
     order_parser.add_argument('size', type=int, help='Page size', default=10)
@@ -125,8 +124,15 @@ class CreateEvent(Resource):
         arg_filter = args['filter']
 
         # Validate arg_order
-        order_pattern = r'^([\+\-][a-zA-Z_]+)(,[\+\-][a-zA-Z_]+)*$'
-        if not re.match(order_pattern, arg_order):
+        order_pattern = r'^([\+\-][a-zA-Z]+)(,[\+\-][a-zA-Z]+)*$'
+        if not re.match(
+                order_pattern,
+                arg_order) or not const.ORDER_FIELDS.issuperset(
+                arg_order.replace(
+                '+',
+                '').replace(
+                    '-',
+                '').split(',')):
             return {"Error": "Invalid order query"}, 400
 
         # Validate arg_page
@@ -146,20 +152,33 @@ class CreateEvent(Resource):
             return {"Error": "Invalid filter query"}, 400
 
         order_criteria = []
+        date_criteria = []
         for order in arg_order.split(','):
             attr_name = order[1:]
             if order.startswith('+'):
-                order_criteria.append(f"{attr_name} ASC")
+                if attr_name == 'datetime':
+                    date_criteria.append(f"date ASC, time_from ASC")
+                else:
+                    order_criteria.append(f"{attr_name} ASC")
             elif order.startswith('-'):
-                order_criteria.append(f"{attr_name} DESC")
-        order_string = ', '.join(order_criteria)
+                if attr_name == 'datetime':
+                    date_criteria.append(f"date DESC, time_from DESC")
+                else:
+                    order_criteria.append(f"{attr_name} DESC")
+        if date_criteria:
+            order_string = ', '.join(date_criteria)
+            if order_criteria:
+                order_string += ', ' + ', '.join(order_criteria)
+        else:
+            order_string = ', '.join(order_criteria)
 
         try:
             result = execute_query(
                 f"SELECT {arg_filter} FROM 'events'\
                 ORDER BY {order_string}\
                 LIMIT {arg_size}\
-                OFFSET {(arg_page - 1) * arg_size}")
+                OFFSET {(arg_page - 1) * arg_size}"
+            )
             # get total number of events from db
             total = execute_query("SELECT COUNT(*) FROM events")[0][0]
         except sqlite3.Error as e:
