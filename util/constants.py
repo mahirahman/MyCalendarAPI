@@ -1,7 +1,7 @@
 # General
 API_NAME = 'Events API'
 API_DESCRIPTION = 'Time-management and scheduling calendar service API for Australians.'
-DB_NAME = 'z5364199'
+DB_NAME = 'database'
 USAGE_MESSAGE = 'Usage: python3 z5364199.py georef-australia-state-suburb.csv au.csv'
 
 # Schema
