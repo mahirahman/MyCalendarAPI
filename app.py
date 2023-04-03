@@ -284,7 +284,7 @@ class Events(Resource):
         df = georef_df[['Geo Point', 'Official Name Suburb',
                         'Official Name State']].dropna()
         rows = df[df['Official Name Suburb'].str.contains(
-            event[6]) & df['Official Name State'].str.contains(const.STATE_ABBREVIATIONS[event[7]])]
+            event[6]) & df['Official Name State'].str.contains(const.STATE_ABBREVIATIONS[event[7].upper()])]
         # Check if row dataframe is not empty
         if not rows.empty:
             # Get the first row from row dataframe
@@ -550,10 +550,6 @@ class Weather(Resource):
         # Read the CSV file containing location data
         au_df = pd.read_csv(sys.argv[2])
         au_df = au_df.drop(['country', 'iso2', 'admin_name', 'capital', 'population', 'population_proper'], axis=1)
-
-        # Convert the latitude and longitude columns to float
-        # au_df['latitude'] = au_df['lat'].astype(float)
-        # au_df['longitude'] = au_df['lng'].astype(float)
 
         # Filter the data to include only the first occurrence of each popular location
         au_df = au_df[au_df['city'].isin(const.POPULAR_LOCATIONS)].groupby('city').first().reset_index()

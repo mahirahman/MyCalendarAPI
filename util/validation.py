@@ -49,8 +49,7 @@ def postcode(postcode_str):
 
 
 def state(state_str):
-    au_states = ['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT']
-    return state_str.upper() in au_states
+    return state_str.upper() in const.STATE_ABBREVIATIONS
 
 # Validate all data fields in a request
 

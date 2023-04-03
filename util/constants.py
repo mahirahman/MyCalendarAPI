@@ -47,7 +47,15 @@ STATE_ABBREVIATIONS = {
     'WA': 'Western Australia',
     'TAS': 'Tasmania',
     'NT': 'Northern Territory',
-    'ACT': 'Australian Capital Territory'
+    'ACT': 'Australian Capital Territory',
+    'NEW SOUTH WALES': 'New South Wales',
+    'VICTORIA': 'Victoria',
+    'QUEENSLAND': 'Queensland',
+    'SOUTH AUSTRALIA': 'South Australia',
+    'WESTERN AUSTRALIA': 'Western Australia',
+    'TASMANIA': 'Tasmania',
+    'NORTHERN TERRITORY': 'Northern Territory',
+    'AUSTRALIAN CAPITAL TERRITORY': 'Australian Capital Territory'
 }
 
 POPULAR_LOCATIONS = ['Sydney', 'Canberra', 'Melbourne', 'Brisbane', 'Perth', 'Adelaide', 'Hobart', 'Darwin', 'Broome', 'Alice Springs', 'Cairns']
