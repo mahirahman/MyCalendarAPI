@@ -51,9 +51,10 @@ class CreateEvent(Resource):
 
     @api.response(201, 'Event Created Successfully')
     @api.response(400, 'Validation Error')
-    @api.doc(description="Create A New Event")
+    @api.doc(description="Create an event specified by the given payload")
     @api.expect(event_model, validate=True)
     def post(self):
+        '''Create an event specified by the given payload'''
         request_data = request.json
 
         # Check request data contains all required fields
@@ -117,9 +118,10 @@ class CreateEvent(Resource):
     @api.response(200, 'Successfully Retrieved All Events')
     @api.response(400, 'Validation Error')
     @api.response(404, 'Events Not Found')
-    @api.doc(description="Get All Events")
+    @api.doc(description="Get all events")
     @api.expect(order_parser)
     def get(self):
+        '''Get all events'''
         args = self.order_parser.parse_args()
         arg_order = args['order']
         arg_page = args['page']
@@ -222,8 +224,9 @@ class Events(Resource):
     @api.response(200, 'Successfully Retrieved Event')
     @api.response(404, 'Event Not Found')
     @api.response(500, 'Error Getting Data From External API')
-    @api.doc(description="Get An Event By ``ID``")
+    @api.doc(description="Get an event by its ``ID``")
     def get(self, id):
+        '''Get an event by its ID'''
         event = execute_query(
             "SELECT * FROM events WHERE id = ?", (id,))
         if not event:
@@ -357,8 +360,9 @@ class Events(Resource):
 
     @api.response(404, 'Event Was Not Found')
     @api.response(200, 'Event Deleted Successfully')
-    @api.doc(description="Delete An Event By Its ``ID``")
+    @api.doc(description="Delete an event by its ``ID``")
     def delete(self, id):
+        '''Delete an event by its ID'''
         event = execute_query("SELECT * FROM events WHERE id = ?", (id,))
         if not event:
             return {"Error": f"Event {id} doesn't exist"}, 404
@@ -370,9 +374,10 @@ class Events(Resource):
     @api.response(404, 'Event Was Not Found')
     @api.response(200, 'Event Updated Successfully')
     @api.response(400, 'Validation Error')
-    @api.doc(description="Update An Event By Its ``ID``")
+    @api.doc(description="Update an event by its ``ID``")
     @api.expect(event_model, validate=True)
     def patch(self, id):
+        '''Update an event by its ID'''
         request_data = request.json
         event = execute_query("SELECT * FROM events WHERE id = ?", (id,))
         if not event:
@@ -457,8 +462,9 @@ class Statistics(Resource):
     @api.response(200, 'Successfully Retrieved Event Statistics')
     @api.response(400, 'Validation Error')
     @api.response(404, 'No Events Found')
-    @api.doc(description="Get Event Statistics")
+    @api.doc(description="Get all event statistics")
     def get(self):
+        '''Get all event statistics'''
         # Validate it is either json or image format
         args = self.statistics_parser.parse_args()
         if args['format'] not in ['json', 'image']:
@@ -550,8 +556,9 @@ class Weather(Resource):
     @api.response(200, 'Successfully Retrieved Weather')
     @api.response(400, 'Validation Error')
     @api.response(500, 'Error Retrieving Weather Data')
-    @api.doc(description="Get The Weather Of Popular Australian Cities")
+    @api.doc(description="Get the weather of popular Australian cities")
     def get(self):
+        '''Get the weather of popular Australian cities'''
         # Validate the date is in the correct format
         args = self.date_parser.parse_args()
         if not validation.date(args['date']):
