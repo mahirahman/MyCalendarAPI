@@ -1,18 +1,19 @@
 from datetime import datetime, timedelta, date
-from io import BytesIO
 from calendar import monthrange
-from collections import defaultdict
-import sys
-import re
-import sqlite3
 import math
 import pandas as pd
+import geopandas as gpd
+import matplotlib
 import matplotlib.pyplot as plt
 import requests
-import geopandas as gpd
+from io import BytesIO
+import sqlite3
 from flask import Flask, request, Response
 from flask_restx import Api, Resource, fields, reqparse
 from shapely.geometry import Point
+import sys
+import re
+from collections import defaultdict
 import util.validation as validation
 import util.constants as const
 from util.sql import execute_query
@@ -537,16 +538,18 @@ class Weather(Resource):
     @api.expect(date_parser)
     @api.response(200, 'Successfully Retrieved Weather')
     @api.response(400, 'Validation Error')
+    @api.response(500, 'Error Retrieving Weather Data')
     @api.doc(description="Get The Weather Of Each Capital City")
     def get(self):
-        # Validate the date is in the correct format a
+        # Validate the date is in the correct format
         args = self.date_parser.parse_args()
         if not validation.date(args['date']):
             return {"Error": "Invalid date format provided"}, 400
-        # Validate the date is within 7 days
-        # Get the lat and lng from all the popular locations and store them in a dict
-        # ping the weather API and get the weather for each location
-        # display the weather for each location on the map
+        # Validate the date is within a week
+        date_diff = (datetime.strptime(args['date'], '%Y-%m-%d').date() - date.today()).days
+        if date_diff > 7 or date_diff < 0:
+            return {"Error": "Date is not within a week"}, 400
+
         # Read the CSV file containing location data
         au_df = pd.read_csv(sys.argv[2])
         au_df = au_df.drop(['country', 'iso2', 'admin_name', 'capital', 'population', 'population_proper'], axis=1)
@@ -554,18 +557,57 @@ class Weather(Resource):
         # Filter the data to include only the first occurrence of each popular location
         au_df = au_df[au_df['city'].isin(const.POPULAR_LOCATIONS)].groupby('city').first().reset_index()
 
+        # Get the weather data for each location
+        for loc in const.POPULAR_LOCATIONS:
+            row = au_df[au_df['city'] == loc].iloc[0]
+            lng, lat = row['lng'], row['lat']
+            url = f"https://www.7timer.info/bin/civil.php?lon={lng}&lat={lat}&lang=en&ac=0&unit=metric&output=json"
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                row_index = au_df[au_df['city'] == loc].index[0]
+                # Get first element if date is today
+                if date_diff == 0:
+                    au_df.at[row_index, 'temperature'] = data.get('dataseries')[0].get('temp2m')
+                else:
+                    # otherwise get 4th element of the corresponding day
+                    init_date_str = data.get('init')
+                    init_date_obj = datetime.strptime(init_date_str, '%Y%m%d%H')
+
+                    event_date_obj = datetime.strptime(args['date'], '%Y-%m-%d').date()
+                    event_date_obj = datetime.combine(event_date_obj, datetime.min.time())
+                    event_datetime_utc_str = str(convert_to_utc(event_date_obj))
+                    event_datetime_utc_str_without_tz = event_datetime_utc_str[:-6]
+                    event_datetime_utc_obj = datetime.strptime(event_datetime_utc_str_without_tz, '%Y-%m-%d %H:%M:%S')
+
+                    # Calculate the number of 3-hour intervals between init_date_obj and event_datetime_utc_obj
+                    num_intervals = (event_datetime_utc_obj - init_date_obj).total_seconds() // (3 * 60 * 60)
+                    # If the number of intervals is negative, set temperature to None
+                    if num_intervals < 0:
+                        temperature = None
+                        return {"Error": "Error retrieving weather data"}, 500
+                    else:
+                        # Get the temperature for the corresponding interval
+                        temperature = data.get('dataseries')[int(num_intervals)].get('temp2m')
+                    # Update the temperature value in the dataframe
+                    au_df.at[row_index, 'temperature'] = temperature
+            else:
+                return {"Error": "Error retrieving weather data"}, 500
         # Create a GeoDataFrame with the Point objects as the geometry column
         geometry = [Point(xy) for xy in zip(au_df['lng'], au_df['lat'])]
         gdf = gpd.GeoDataFrame(au_df, geometry=geometry)
 
+        matplotlib.use('Agg')
         # Plot the image
         img = plt.imread('util/au_map.jpg')
         fig, ax = plt.subplots(figsize=(10, 10))
         ax.imshow(img, extent=[112.90, 153.70, -43.70, -10.50])
 
         # Add annotation boxes to the points
-        for idx, row in gdf.iterrows():
-            ax.annotate(row['city'], xy=row['geometry'].coords[0], xytext=(-30, 5), textcoords="offset points", bbox=dict(facecolor='white', edgecolor='black'), fontsize=8)
+        for _, row in gdf.iterrows():
+            xytext = (-60, 5) if row['city'] == 'Brisbane' else (-30, 5)
+            text = f"{row['city']} {int(row['temperature'])}°C"
+            ax.annotate(text, xy=row['geometry'].coords[0], xytext=xytext, textcoords="offset points", bbox=dict(facecolor='white', edgecolor='black'), fontsize=8)
 
         # Remove x and y axis
         ax.set_xticks([])
@@ -582,6 +624,7 @@ class Weather(Resource):
         buffer = BytesIO()
         plt.savefig(buffer, format='png', bbox_inches='tight')
         buffer.seek(0)
+
         return Response(buffer.getvalue(), mimetype='image/png')
 
 
