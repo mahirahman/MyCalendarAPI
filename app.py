@@ -16,6 +16,7 @@ from shapely.geometry import Point
 import util.validation as validation
 import util.constants as const
 from util.sql import execute_query
+from util.helper import convert_to_utc
 
 if len(sys.argv) != 3:
     print(const.USAGE_MESSAGE)
@@ -217,33 +218,6 @@ class CreateEvent(Resource):
 @api.param('id', 'The Event identifier')
 class Events(Resource):
 
-    def get_start_time_in_dataseries(self):
-        # Convert the current time to format: 16:29:00
-        curr_time = datetime.now().strftime('%H:%M:%S')
-        init_time = datetime.strptime('11:00:00', '%H:%M:%S').time()
-        # Find the time difference between curr_time and CONST_TIME
-        time_diff = datetime.combine(datetime.today(), datetime.strptime(str(
-            curr_time), '%H:%M:%S').time()) - datetime.combine(datetime.today(), init_time)
-        # Convert the time difference to hours
-        time_diff_hours = time_diff.total_seconds() / 3600
-        # Calculate the starting time for the first item in the dataseries list
-        starting_time = (
-            datetime.combine(
-                datetime.today(),
-                datetime.time(
-                    datetime(
-                        1,
-                        1,
-                        1,
-                        11,
-                        0))) +
-            timedelta(
-                hours=int(
-                    time_diff_hours //
-                    3) *
-                3)).time()
-        return starting_time
-
     @api.response(200, 'Successfully Retrieved Event')
     @api.response(404, 'Event Not Found')
     @api.response(500, 'Error Getting Data From External API')
@@ -296,50 +270,48 @@ class Events(Resource):
             return {"Error": "Error getting holiday data from NagerDate"}, 500
 
         # Get weather data
-        event_date_time = datetime.strptime(event[2], '%Y-%m-%d').date()
-        date_diff = (event_date_time - datetime.today().date()).days
-        start_time = self.get_start_time_in_dataseries()
-        start_datetime = datetime.combine(datetime.today().date(), start_time)
-        from_time = datetime.strptime(event[3], '%H:%M:%S').time()
-        event_datetime = datetime.combine(event_date_time, from_time)
-        # Check if event is within 7 days and start_time does not take place
-        # before event_datetime
-        if date_diff <= 7 and date_diff >= 0 and event_datetime >= start_datetime:
-            # Get lat and lng from Suburb and State
-            georef_df = pd.read_csv(sys.argv[1], delimiter=';')
-            # print all columns in georef_df
-            georef_df = georef_df.drop(
-                columns=[
-                    'Geo Shape',
-                    'Year',
-                    'Official Code State',
-                    'Official Code Local Government Area',
-                    'Official Name Local Government Area',
-                    'Official Code Suburb',
-                    'Iso 3166-3 Area Code',
-                    'Type'])
-            df = georef_df[['Geo Point', 'Official Name Suburb',
-                            'Official Name State']].dropna()
-            rows = df[df['Official Name Suburb'].str.contains(
-                event[6]) & df['Official Name State'].str.contains(const.STATE_ABBREVIATIONS[event[7]])]
-            # Check if row dataframe is not empty
-            if not rows.empty:
-                # Get the first row from row dataframe
-                row = rows.iloc[0]
-                lat = row['Geo Point'].split(',')[0].replace(' ', '')
-                lng = row['Geo Point'].split(',')[1].replace(' ', '')
-                url = f"https://www.7timer.info/bin/civil.php?lon={lng}&lat={lat}&lang=en&ac=0&unit=metric&output=json"
-                response = requests.get(url)
-                if response.status_code == 200:
+        georef_df = pd.read_csv(sys.argv[1], delimiter=';')
+        georef_df = georef_df.drop(
+            columns=[
+                'Geo Shape',
+                'Year',
+                'Official Code State',
+                'Official Code Local Government Area',
+                'Official Name Local Government Area',
+                'Official Code Suburb',
+                'Iso 3166-3 Area Code',
+                'Type'])
+        df = georef_df[['Geo Point', 'Official Name Suburb',
+                        'Official Name State']].dropna()
+        rows = df[df['Official Name Suburb'].str.contains(
+            event[6]) & df['Official Name State'].str.contains(const.STATE_ABBREVIATIONS[event[7]])]
+        # Check if row dataframe is not empty
+        if not rows.empty:
+            # Get the first row from row dataframe
+            row = rows.iloc[0]
+            lat = row['Geo Point'].split(',')[0].replace(' ', '')
+            lng = row['Geo Point'].split(',')[1].replace(' ', '')
+            url = f"https://www.7timer.info/bin/civil.php?lon={lng}&lat={lat}&lang=en&ac=0&unit=metric&output=json"
+            response = requests.get(url)
+            if response.status_code == 200:
+                init_date_str = response.json().get('init')
+                init_date_obj = datetime.strptime(init_date_str, '%Y%m%d%H')
+                event_date_obj = datetime.strptime(event[2], '%Y-%m-%d').date()
+                from_time_obj = datetime.strptime(event[3], '%H:%M:%S').time()
+
+                event_datetime_obj = datetime.combine(event_date_obj, from_time_obj)
+                event_datetime_utc_str = str(convert_to_utc(event_datetime_obj))
+                event_datetime_utc_str_without_tz = event_datetime_utc_str[:-6]
+                event_datetime_utc_obj = datetime.strptime(event_datetime_utc_str_without_tz, '%Y-%m-%d %H:%M:%S')
+                
+                # Check if date and from_time is within a valid range
+                start_time = init_date_obj + timedelta(hours=3)
+                end_time = init_date_obj + timedelta(hours=195)
+                if (event_datetime_utc_obj >= start_time) and (event_datetime_utc_obj < end_time):
                     dataseries = response.json().get('dataseries')
-                    first_element = datetime.combine(
-                        datetime.today().date(), start_time)
-                    # Keep adding 3 hours to first_element until the date is
-                    # equal to event[2] and time is greater than event[3]
-                    count = 0
-                    while first_element.date() < event_date_time or first_element.time() <= from_time:
-                        first_element += timedelta(hours=3)
-                        count += 1
+                    hours_between = (event_datetime_utc_obj - init_date_obj).total_seconds() // 3600
+                    # Calculate the number of dataseries elements that fall within the time period
+                    count = sum(1 for d in response.json().get('dataseries') if 0 <= d.get('timepoint') <= hours_between) - 1
                     metadata['cloud-cover'] = const.CLOUD_COVER.get(
                         dataseries[count].get('cloudcover'))
                     metadata['precepitation-type'] = const.PRECEPICTION_TYPE.get(
@@ -354,9 +326,8 @@ class Events(Resource):
                         dataseries[count].get('weather'))
                     metadata['humidity'] = dataseries[count].get('rh2m')
                     metadata['temperature'] = f"{dataseries[count].get('temp2m')} °C"
-                else:
-                    return {
-                        "Error": "Error getting weather data from 7Timer"}, 500
+            else:
+                return {"Error": "Error getting weather data from 7timer"}, 500
 
         return {
             'id': event[0],
@@ -586,8 +557,6 @@ class Weather(Resource):
 
         # Filter the data to include only the first occurrence of each popular location
         au_df = au_df[au_df['city'].isin(const.POPULAR_LOCATIONS)].groupby('city').first().reset_index()
-
-        print(au_df)
 
         # Create a GeoDataFrame with the Point objects as the geometry column
         geometry = [Point(xy) for xy in zip(au_df['lng'], au_df['lat'])]
