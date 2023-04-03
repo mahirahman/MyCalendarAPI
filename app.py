@@ -9,17 +9,17 @@ import math
 import pandas as pd
 import matplotlib.pyplot as plt
 import requests
-import util.validation as validation
-import util.constants as const
+import geopandas as gpd
 from flask import Flask, request, Response
 from flask_restx import Api, Resource, fields, reqparse
+from shapely.geometry import Point
+import util.validation as validation
+import util.constants as const
 from util.sql import execute_query
 
 if len(sys.argv) != 3:
     print(const.USAGE_MESSAGE)
     sys.exit(1)
-au_df = pd.read_csv(sys.argv[2])
-georef_df = pd.read_csv(sys.argv[1], delimiter=';')
 
 execute_query(const.SCHEMA)
 app = Flask(__name__)
@@ -67,13 +67,14 @@ class CreateEvent(Resource):
         if validation_errors:
             return {"Errors": validation_errors}, 400
 
-        overlap_query = "SELECT * FROM events WHERE date = ? AND time_from < ? AND time_to > ?"
-        overlap_params = (request_data['date'],
-                          request_data['to'], request_data['from'])
-        is_overlap = execute_query(overlap_query, overlap_params)
-
+        is_overlap = execute_query(
+            "SELECT * FROM events WHERE date = ? AND time_from < ? AND time_to > ?",
+            (request_data['date'],
+             request_data['to'],
+             request_data['from']))
         if is_overlap:
             return {"Error": "Event overlaps with another event"}, 400
+
         event_id = execute_query("SELECT COUNT(*) FROM events")[0][0] + 1
         curr_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         insert_query = "INSERT INTO events VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -157,12 +158,12 @@ class CreateEvent(Resource):
             attr_name = order[1:]
             if order.startswith('+'):
                 if attr_name == 'datetime':
-                    date_criteria.append(f"date ASC, time_from ASC")
+                    date_criteria.append("date ASC, time_from ASC")
                 else:
                     order_criteria.append(f"{attr_name} ASC")
             elif order.startswith('-'):
                 if attr_name == 'datetime':
-                    date_criteria.append(f"date DESC, time_from DESC")
+                    date_criteria.append("date DESC, time_from DESC")
                 else:
                     order_criteria.append(f"{attr_name} DESC")
         if date_criteria:
@@ -305,6 +306,18 @@ class Events(Resource):
         # before event_datetime
         if date_diff <= 7 and date_diff >= 0 and event_datetime >= start_datetime:
             # Get lat and lng from Suburb and State
+            georef_df = pd.read_csv(sys.argv[1], delimiter=';')
+            # print all columns in georef_df
+            georef_df = georef_df.drop(
+                columns=[
+                    'Geo Shape',
+                    'Year',
+                    'Official Code State',
+                    'Official Code Local Government Area',
+                    'Official Name Local Government Area',
+                    'Official Code Suburb',
+                    'Iso 3166-3 Area Code',
+                    'Type'])
             df = georef_df[['Geo Point', 'Official Name Suburb',
                             'Official Name State']].dropna()
             rows = df[df['Official Name Suburb'].str.contains(
@@ -563,7 +576,48 @@ class Weather(Resource):
         # Get the lat and lng from all the popular locations and store them in a dict
         # ping the weather API and get the weather for each location
         # display the weather for each location on the map
-        return None
+        # Read the CSV file containing location data
+        au_df = pd.read_csv(sys.argv[2])
+        au_df = au_df.drop(['country', 'iso2', 'admin_name', 'capital', 'population', 'population_proper'], axis=1)
+
+        # Convert the latitude and longitude columns to float
+        # au_df['latitude'] = au_df['lat'].astype(float)
+        # au_df['longitude'] = au_df['lng'].astype(float)
+
+        # Filter the data to include only the first occurrence of each popular location
+        au_df = au_df[au_df['city'].isin(const.POPULAR_LOCATIONS)].groupby('city').first().reset_index()
+
+        print(au_df)
+
+        # Create a GeoDataFrame with the Point objects as the geometry column
+        geometry = [Point(xy) for xy in zip(au_df['lng'], au_df['lat'])]
+        gdf = gpd.GeoDataFrame(au_df, geometry=geometry)
+
+        # Plot the image
+        img = plt.imread('util/au_map.jpg')
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.imshow(img, extent=[112.90, 153.70, -43.70, -10.50])
+
+        # Add annotation boxes to the points
+        for idx, row in gdf.iterrows():
+            ax.annotate(row['city'], xy=row['geometry'].coords[0], xytext=(-30, 5), textcoords="offset points", bbox=dict(facecolor='white', edgecolor='black'), fontsize=8)
+
+        # Remove x and y axis
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+
+        # Hide the red dot plots
+        gdf.plot(ax=ax, alpha=0)
+
+        # Show the plot
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight')
+        buffer.seek(0)
+        return Response(buffer.getvalue(), mimetype='image/png')
 
 
 if __name__ == '__main__':

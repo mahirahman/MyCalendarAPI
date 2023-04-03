@@ -3,10 +3,14 @@ import util.constants as const
 import re
 
 # Validate String
+
+
 def string(str):
     return len(str) > 0 and len(str) <= 64
 
 # Validate Date
+
+
 def date(date_str):
     try:
         datetime.strptime(date_str, '%Y-%m-%d')
@@ -15,6 +19,8 @@ def date(date_str):
         return False
 
 # Validate Time
+
+
 def time(time_str):
     try:
         datetime.strptime(time_str, '%H:%M:%S')
@@ -26,21 +32,29 @@ def time(time_str):
         return False
 
 # Validate Time Range
+
+
 def time_range(from_time_str, to_time_str):
     from_time = datetime.strptime(from_time_str, '%H:%M:%S')
     to_time = datetime.strptime(to_time_str, '%H:%M:%S')
     return from_time < to_time
 
 # Validate Postcode
+
+
 def postcode(postcode_str):
     return bool(re.match(r'^\d{4}$', postcode_str))
 
 # Validate State
+
+
 def state(state_str):
     au_states = ['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT']
     return state_str.upper() in au_states
 
 # Validate all data fields in a request
+
+
 def all_data(data):
     errors = {}
     if 'name' in data and not string(data['name']):
