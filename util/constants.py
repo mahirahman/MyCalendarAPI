@@ -1,8 +1,11 @@
+import os
+import sys
+
 # General
 API_NAME = 'Events API'
 API_DESCRIPTION = 'Time-management and scheduling calendar service API for Australians.'
 DB_NAME = 'database'
-USAGE_MESSAGE = 'Usage: python3 z5364199.py georef-australia-state-suburb.csv au.csv'
+USAGE_MESSAGE = f'Usage: python3 {os.path.basename(sys.argv[0])} georef-australia-state-suburb.csv au.csv'
 
 # Schema
 SCHEMA = (
@@ -58,7 +61,18 @@ STATE_ABBREVIATIONS = {
     'AUSTRALIAN CAPITAL TERRITORY': 'Australian Capital Territory'
 }
 
-POPULAR_LOCATIONS = ['Sydney', 'Canberra', 'Melbourne', 'Brisbane', 'Perth', 'Adelaide', 'Hobart', 'Darwin', 'Broome', 'Alice Springs', 'Cairns']
+POPULAR_LOCATIONS = [
+    'Sydney',
+    'Canberra',
+    'Melbourne',
+    'Brisbane',
+    'Perth',
+    'Adelaide',
+    'Hobart',
+    'Darwin',
+    'Broome',
+    'Alice Springs',
+    'Cairns']
 
 # Weather Data
 CLOUD_COVER = {
@@ -133,5 +147,4 @@ WEATHER_CONDITION = {
     "tsday": "Lifted Index less than -5 with precipitation rate below 4mm/hr",
     "tsnight": "Lifted Index less than -5 with precipitation rate below 4mm/hr",
     "tsrainday": "Lifted Index less than -5 with precipitation rate over 4mm/hr",
-    "tsrainnight": "Lifted Index less than -5 with precipitation rate over 4mm/hr"
-}
+    "tsrainnight": "Lifted Index less than -5 with precipitation rate over 4mm/hr"}

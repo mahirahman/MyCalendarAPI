@@ -100,17 +100,17 @@ class CreateEvent(Resource):
         'order',
         type=str,
         help="Sort order - comma-separated value to sort the list based on the given criteria.\
-        The string consists of two parts: the first part is a special character '+' or '-' where\
-        '+' indicates ordering ascendingly, and '-' indicates ordering descendingly. The second\
-        part is an attribute name which is one of {id, name, datetime}",
+        The string consists of two parts: the first part is a special character `+` or `-` where\
+        `+` indicates ordering ascendingly, and `-` indicates ordering descendingly. The second\
+        part is an attribute name which is one of **{id, name, datetime}**",
         default='+id')
     order_parser.add_argument('page', type=int, help='Page number', default=1)
     order_parser.add_argument('size', type=int, help='Page size', default=10)
     order_parser.add_argument(
         'filter',
         type=str,
-        help='Fields to include in response - comma-separated value (combination of: id, name,\
-            date, from, to, and location), and shows what attribute should be shown for each\
+        help='Fields to include in response - comma-separated value (combination of: **id, name,\
+            date, from, to, and location**), and shows what attribute should be shown for each\
             event accordingly.',
         default='id,name')
 
@@ -222,7 +222,7 @@ class Events(Resource):
     @api.response(200, 'Successfully Retrieved Event')
     @api.response(404, 'Event Not Found')
     @api.response(500, 'Error Getting Data From External API')
-    @api.doc(description="Get An Event By ID")
+    @api.doc(description="Get An Event By ``ID``")
     def get(self, id):
         event = execute_query(
             "SELECT * FROM events WHERE id = ?", (id,))
@@ -300,19 +300,26 @@ class Events(Resource):
                 event_date_obj = datetime.strptime(event[2], '%Y-%m-%d').date()
                 from_time_obj = datetime.strptime(event[3], '%H:%M:%S').time()
 
-                event_datetime_obj = datetime.combine(event_date_obj, from_time_obj)
-                event_datetime_utc_str = str(convert_to_utc(event_datetime_obj))
+                event_datetime_obj = datetime.combine(
+                    event_date_obj, from_time_obj)
+                event_datetime_utc_str = str(
+                    convert_to_utc(event_datetime_obj))
                 event_datetime_utc_str_without_tz = event_datetime_utc_str[:-6]
-                event_datetime_utc_obj = datetime.strptime(event_datetime_utc_str_without_tz, '%Y-%m-%d %H:%M:%S')
-                
+                event_datetime_utc_obj = datetime.strptime(
+                    event_datetime_utc_str_without_tz, '%Y-%m-%d %H:%M:%S')
+
                 # Check if date and from_time is within a valid range
                 start_time = init_date_obj + timedelta(hours=3)
                 end_time = init_date_obj + timedelta(hours=195)
-                if (event_datetime_utc_obj >= start_time) and (event_datetime_utc_obj < end_time):
+                if (event_datetime_utc_obj >= start_time) and (
+                        event_datetime_utc_obj < end_time):
                     dataseries = response.json().get('dataseries')
-                    hours_between = (event_datetime_utc_obj - init_date_obj).total_seconds() // 3600
-                    # Calculate the number of dataseries elements that fall within the time period
-                    count = sum(1 for d in response.json().get('dataseries') if 0 <= d.get('timepoint') <= hours_between) - 1
+                    hours_between = (
+                        event_datetime_utc_obj - init_date_obj).total_seconds() // 3600
+                    # Calculate the number of dataseries elements that fall
+                    # within the time period
+                    count = sum(1 for d in response.json().get(
+                        'dataseries') if 0 <= d.get('timepoint') <= hours_between) - 1
                     metadata['cloud-cover'] = const.CLOUD_COVER.get(
                         dataseries[count].get('cloudcover'))
                     metadata['precepitation-type'] = const.PRECEPICTION_TYPE.get(
@@ -350,7 +357,7 @@ class Events(Resource):
 
     @api.response(404, 'Event Was Not Found')
     @api.response(200, 'Event Deleted Successfully')
-    @api.doc(description="Delete An Event By Its ID")
+    @api.doc(description="Delete An Event By Its ``ID``")
     def delete(self, id):
         event = execute_query("SELECT * FROM events WHERE id = ?", (id,))
         if not event:
@@ -358,12 +365,12 @@ class Events(Resource):
 
         execute_query("DELETE FROM events WHERE id = ?", (id,))
         return {
-            "message": f"The event with id {id} was removed from the database!", "id": id}, 200
+            "message": f"The event with id {id} has been removed", "id": id}, 200
 
     @api.response(404, 'Event Was Not Found')
     @api.response(200, 'Event Updated Successfully')
     @api.response(400, 'Validation Error')
-    @api.doc(description="Update An Event By Its ID")
+    @api.doc(description="Update An Event By Its ``ID``")
     @api.expect(event_model, validate=True)
     def patch(self, id):
         request_data = request.json
@@ -442,7 +449,9 @@ class Statistics(Resource):
         'format',
         type=str,
         required=True,
-        help='Format of the statistics, can be either "json" or "image"')
+        help='Format of the statistics, can be either "json" or "image"',
+        default='json'
+    )
 
     @api.expect(statistics_parser)
     @api.response(200, 'Successfully Retrieved Event Statistics')
@@ -518,7 +527,7 @@ class Statistics(Resource):
             ax.bar(events_per_month.keys(), events_per_month.values())
             ax.set_xlabel('Month')
             ax.set_ylabel('Number of Events')
-            ax.set_title(f'Events per Month in {current_year}')
+            ax.set_title(f'Events per Month in Current Year ({current_year})')
             buffer = BytesIO()
             plt.savefig(buffer, format='png')
             buffer.seek(0)
@@ -533,29 +542,43 @@ class Weather(Resource):
         'date',
         type=str,
         required=True,
-        help='Date in the format "YYYY-MM-DD"')
+        help='Date in the format ``YYYY-MM-DD``',
+        default=date.today().strftime('%Y-%m-%d'),
+    )
 
     @api.expect(date_parser)
     @api.response(200, 'Successfully Retrieved Weather')
     @api.response(400, 'Validation Error')
     @api.response(500, 'Error Retrieving Weather Data')
-    @api.doc(description="Get The Weather Of Each Capital City")
+    @api.doc(description="Get The Weather Of Popular Australian Cities")
     def get(self):
         # Validate the date is in the correct format
         args = self.date_parser.parse_args()
         if not validation.date(args['date']):
             return {"Error": "Invalid date format provided"}, 400
         # Validate the date is within a week
-        date_diff = (datetime.strptime(args['date'], '%Y-%m-%d').date() - date.today()).days
+        date_diff = (
+            datetime.strptime(
+                args['date'],
+                '%Y-%m-%d').date() -
+            date.today()).days
         if date_diff > 7 or date_diff < 0:
             return {"Error": "Date is not within a week"}, 400
 
         # Read the CSV file containing location data
         au_df = pd.read_csv(sys.argv[2])
-        au_df = au_df.drop(['country', 'iso2', 'admin_name', 'capital', 'population', 'population_proper'], axis=1)
+        au_df = au_df.drop(['country',
+                            'iso2',
+                            'admin_name',
+                            'capital',
+                            'population',
+                            'population_proper'],
+                           axis=1)
 
-        # Filter the data to include only the first occurrence of each popular location
-        au_df = au_df[au_df['city'].isin(const.POPULAR_LOCATIONS)].groupby('city').first().reset_index()
+        # Filter the data to include only the first occurrence of each popular
+        # location
+        au_df = au_df[au_df['city'].isin(const.POPULAR_LOCATIONS)].groupby(
+            'city').first().reset_index()
 
         # Get the weather data for each location
         for loc in const.POPULAR_LOCATIONS:
@@ -568,27 +591,37 @@ class Weather(Resource):
                 row_index = au_df[au_df['city'] == loc].index[0]
                 # Get first element if date is today
                 if date_diff == 0:
-                    au_df.at[row_index, 'temperature'] = data.get('dataseries')[0].get('temp2m')
+                    au_df.at[row_index, 'temperature'] = data.get('dataseries')[
+                        0].get('temp2m')
                 else:
                     # otherwise get 4th element of the corresponding day
                     init_date_str = data.get('init')
-                    init_date_obj = datetime.strptime(init_date_str, '%Y%m%d%H')
+                    init_date_obj = datetime.strptime(
+                        init_date_str, '%Y%m%d%H')
 
-                    event_date_obj = datetime.strptime(args['date'], '%Y-%m-%d').date()
-                    event_date_obj = datetime.combine(event_date_obj, datetime.min.time())
-                    event_datetime_utc_str = str(convert_to_utc(event_date_obj))
+                    event_date_obj = datetime.strptime(
+                        args['date'], '%Y-%m-%d').date()
+                    event_date_obj = datetime.combine(
+                        event_date_obj, datetime.min.time())
+                    event_datetime_utc_str = str(
+                        convert_to_utc(event_date_obj))
                     event_datetime_utc_str_without_tz = event_datetime_utc_str[:-6]
-                    event_datetime_utc_obj = datetime.strptime(event_datetime_utc_str_without_tz, '%Y-%m-%d %H:%M:%S')
+                    event_datetime_utc_obj = datetime.strptime(
+                        event_datetime_utc_str_without_tz, '%Y-%m-%d %H:%M:%S')
 
-                    # Calculate the number of 3-hour intervals between init_date_obj and event_datetime_utc_obj
-                    num_intervals = (event_datetime_utc_obj - init_date_obj).total_seconds() // (3 * 60 * 60)
-                    # If the number of intervals is negative, set temperature to None
+                    # Calculate the number of 3-hour intervals between
+                    # init_date_obj and event_datetime_utc_obj
+                    num_intervals = (
+                        event_datetime_utc_obj - init_date_obj).total_seconds() // (3 * 60 * 60)
+                    # If the number of intervals is negative, set temperature
+                    # to None
                     if num_intervals < 0:
                         temperature = None
                         return {"Error": "Error retrieving weather data"}, 500
                     else:
                         # Get the temperature for the corresponding interval
-                        temperature = data.get('dataseries')[int(num_intervals)].get('temp2m')
+                        temperature = data.get('dataseries')[
+                            int(num_intervals)].get('temp2m')
                     # Update the temperature value in the dataframe
                     au_df.at[row_index, 'temperature'] = temperature
             else:
@@ -607,7 +640,15 @@ class Weather(Resource):
         for _, row in gdf.iterrows():
             xytext = (-60, 5) if row['city'] == 'Brisbane' else (-30, 5)
             text = f"{row['city']} {int(row['temperature'])}°C"
-            ax.annotate(text, xy=row['geometry'].coords[0], xytext=xytext, textcoords="offset points", bbox=dict(facecolor='white', edgecolor='black'), fontsize=8)
+            ax.annotate(
+                text,
+                xy=row['geometry'].coords[0],
+                xytext=xytext,
+                textcoords="offset points",
+                bbox=dict(
+                    facecolor='white',
+                    edgecolor='black'),
+                fontsize=8)
 
         # Remove x and y axis
         ax.set_xticks([])
