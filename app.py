@@ -17,7 +17,7 @@ from collections import defaultdict
 import util.validation as validation
 import util.constants as const
 from util.sql import execute_query
-from util.helper import convert_to_utc
+import util.helper as util
 
 if len(sys.argv) != 3:
     print(const.USAGE_MESSAGE)
@@ -70,29 +70,26 @@ class CreateEvent(Resource):
         if validation_errors:
             return {"Errors": validation_errors}, 400
 
-        is_overlap = execute_query(
-            "SELECT * FROM events WHERE date = ? AND time_from < ? AND time_to > ?",
-            (request_data['date'],
-             request_data['to'],
-             request_data['from']))
-        if is_overlap:
+        # Check if event overlaps with another event
+        if validation.is_event_overlap((request_data['date'],
+                                        request_data['to'],
+                                        request_data['from'])):
             return {"Error": "Event overlaps with another event"}, 400
+        curr_time = util.get_datetime_in_format(datetime.now())
+        event_id = util.get_total_events() + 1
+        execute_query(
+            "INSERT INTO events VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (request_data['name'],
+             request_data['date'],
+             request_data['from'],
+             request_data['to'],
+             request_data['location']['street'],
+             request_data['location']['suburb'],
+             request_data['location']['state'],
+             request_data['location']['post-code'],
+             request_data['description'],
+             curr_time))
 
-        event_id = execute_query("SELECT COUNT(*) FROM events")[0][0] + 1
-        curr_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        insert_query = "INSERT INTO events VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        insert_params = (
-            request_data['name'],
-            request_data['date'],
-            request_data['from'],
-            request_data['to'],
-            request_data['location']['street'],
-            request_data['location']['suburb'],
-            request_data['location']['state'],
-            request_data['location']['post-code'],
-            request_data['description'],
-            curr_time)
-        execute_query(insert_query, insert_params)
         return {'id': int(event_id), 'last-update': curr_time,
                 '_links': {'self': {'href': f'/events/{str(event_id)}'}}}, 201
 
@@ -129,15 +126,13 @@ class CreateEvent(Resource):
         arg_filter = args['filter']
 
         # Validate arg_order
-        order_pattern = r'^([\+\-][a-zA-Z]+)(,[\+\-][a-zA-Z]+)*$'
+        # Translation table that removes characters with ASCII codes 43 (+) and
+        # 45 (-)
+        field_names = [name.translate({43: None, 45: None})
+                       for name in arg_order.split(',')]
         if not re.match(
-                order_pattern,
-                arg_order) or not const.ORDER_FIELDS.issuperset(
-                arg_order.replace(
-                '+',
-                '').replace(
-                    '-',
-                '').split(',')):
+                const.ORDER_PATTERN,
+                arg_order) or not const.ORDER_FIELDS.issuperset(field_names):
             return {"Error": "Invalid order query"}, 400
 
         # Validate arg_page
@@ -149,66 +144,76 @@ class CreateEvent(Resource):
             return {"Error": "Invalid size query"}, 400
 
         # Validate arg_filter
-        filter_pattern = r'^[a-zA-Z_]+(,[a-zA-Z_]+)*$'
         if not re.match(
-                filter_pattern,
+                const.FILTER_PATTERN,
                 arg_filter) or not const.FILTER_FIELDS.issuperset(
                 arg_filter.split(',')):
             return {"Error": "Invalid filter query"}, 400
 
+        # If the filter query contains location, from or to then replace them
+        # with their corresponding attribute names
+        arg_filter = [
+            v if v not in {
+                'location',
+                'from',
+                'to'} else {
+                'location': 'street,suburb,state,post_code',
+                'from': 'time_from',
+                'to': 'time_to'}[v] for v in arg_filter.split(',')]
+        arg_filter = ','.join(arg_filter)
+
+        # Construct order string
         order_criteria = []
         date_criteria = []
         for order in arg_order.split(','):
-            attr_name = order[1:]
-            if order.startswith('+'):
-                if attr_name == 'datetime':
-                    date_criteria.append("date ASC, time_from ASC")
-                else:
-                    order_criteria.append(f"{attr_name} ASC")
-            elif order.startswith('-'):
-                if attr_name == 'datetime':
-                    date_criteria.append("date DESC, time_from DESC")
-                else:
-                    order_criteria.append(f"{attr_name} DESC")
-        if date_criteria:
-            order_string = ', '.join(date_criteria)
-            if order_criteria:
-                order_string += ', ' + ', '.join(order_criteria)
-        else:
-            order_string = ', '.join(order_criteria)
+            order_type, attr_name = order[0], order[1:]
+            if attr_name == 'datetime':
+                date_criteria.append(
+                    f"date {const.ORDER_DIRECTION[order_type]}, time_from {const.ORDER_DIRECTION[order_type]}")
+            else:
+                order_criteria.append(
+                    f"{attr_name} {const.ORDER_DIRECTION[order_type]}")
+        order_string = ', '.join(date_criteria + order_criteria)
 
-        try:
-            result = execute_query(
-                f"SELECT {arg_filter} FROM 'events'\
-                ORDER BY {order_string}\
-                LIMIT {arg_size}\
-                OFFSET {(arg_page - 1) * arg_size}"
-            )
-            # get total number of events from db
-            total = execute_query("SELECT COUNT(*) FROM events")[0][0]
-        except sqlite3.Error as e:
-            return str(e), 400
+        result = execute_query(
+            f"SELECT {arg_filter} FROM 'events'\
+            ORDER BY {order_string}\
+            LIMIT {arg_size}\
+            OFFSET {(arg_page - 1) * arg_size}"
+        )
         if not result:
             return {"Error": f"No events found on page {arg_page}"}, 404
 
-        # using total and result, calculate the number of pages possible
+        # Construct links
         links = {
             "self": {
                 "href": f"/events?order={arg_order}&page={arg_page}&size={arg_size}&filter={arg_filter}",
             },
         }
-        num_pages = math.ceil(total / arg_size)
+        num_pages = math.ceil(util.get_total_events() / arg_size)
         if arg_page < num_pages:
             links["next"] = {
                 "href": f"/events?order={arg_order}&page={arg_page + 1}&size={arg_size}&filter={arg_filter}",
             }
 
+        # Construct events
         events = []
         for row in result:
             event = {}
             for i, field in enumerate(arg_filter.split(',')):
-                event[field] = row[i]
+                if field == 'time_from':
+                    event['time'] = row[i]
+                elif field == 'time_to':
+                    event['to'] = row[i]
+                elif field in {'street', 'suburb', 'state', 'post_code'}:
+                    event.setdefault(
+                        'location', {})[
+                        field.replace(
+                            '_', '-')] = row[i]
+                else:
+                    event[field] = row[i]
             events.append(event)
+
         return {
             "page": arg_page,
             "page-size": arg_size,
@@ -218,7 +223,7 @@ class CreateEvent(Resource):
 
 
 @api.route('/events/<int:id>')
-@api.param('id', 'The Event identifier')
+@api.param('id', 'The event identifier')
 class Events(Resource):
 
     @api.response(200, 'Successfully Retrieved Event')
@@ -306,7 +311,7 @@ class Events(Resource):
                 event_datetime_obj = datetime.combine(
                     event_date_obj, from_time_obj)
                 event_datetime_utc_str = str(
-                    convert_to_utc(event_datetime_obj))
+                    util.convert_to_utc(event_datetime_obj))
                 event_datetime_utc_str_without_tz = event_datetime_utc_str[:-6]
                 event_datetime_utc_obj = datetime.strptime(
                     event_datetime_utc_str_without_tz, '%Y-%m-%d %H:%M:%S')
@@ -394,22 +399,19 @@ class Events(Resource):
         if validation_errors:
             return {"Errors": validation_errors}, 400
         # Check if the event overlaps with another event
-        overlap_query = "SELECT * FROM events WHERE date = ? AND time_from < ? AND time_to > ?"
-        overlap_params = (
+        is_overlap = validation.is_event_overlap((
             request_data['date'] if 'date' in data_keys else execute_query(
                 "SELECT date FROM events WHERE id = ?", (id,))[0][0],
             request_data['to'] if 'to' in data_keys else execute_query(
                 "SELECT time_to FROM events WHERE id = ?", (id,))[0][0],
             request_data['from'] if 'from' in data_keys else execute_query(
                 "SELECT time_from FROM events WHERE id = ?", (id,))[0][0],
-        )
-
-        is_overlap = execute_query(overlap_query, overlap_params)
+        ))
         if is_overlap and is_overlap[0][0] != id:
             return {"Error": "Event overlaps with another event"}, 400
 
         # Update event in database
-        curr_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        curr_time = util.get_datetime_in_format(datetime.now())
         update_query = "UPDATE events SET name = ?, date = ?, time_from = ?, time_to = ?, street = ?, suburb = ?, state = ?, post_code = ?, description = ?, last_update = ? WHERE id = ?"
         update_params = (
             request_data['name'] if 'name' in data_keys else execute_query(
@@ -471,7 +473,7 @@ class Statistics(Resource):
             return {"Error": "Invalid format provided"}, 400
 
         # Total Number of events
-        total_events = execute_query("SELECT COUNT(*) FROM events")[0][0]
+        total_events = util.get_total_events()
         if total_events == 0:
             return {"Error": "No events found"}, 404
         # Total Number of events in current calendar Week (Today to Sunday)
@@ -480,8 +482,10 @@ class Statistics(Resource):
         next_sunday = today + timedelta(days=days_until_sunday)
         total_events_current_week = execute_query(
             "SELECT COUNT(*) FROM events WHERE date BETWEEN ? AND ?",
-            (datetime.now().strftime('%Y-%m-%d'),
-             next_sunday))[0][0]
+            (
+
+                util.get_datetime_in_format(datetime.now(), '%Y-%m-%d'),
+                next_sunday))[0][0]
 
         # Total Number of events in current calendar Month (1st to the last day
         # of the month)
@@ -492,8 +496,11 @@ class Statistics(Resource):
         # month
         total_events_current_month = execute_query(
             "SELECT COUNT(*) FROM events WHERE date BETWEEN ? AND ?",
-            (first_day.strftime('%Y-%m-%d'),
-             last_day.strftime('%Y-%m-%d')))[0][0]
+            (
+                util.get_datetime_in_format(first_day, '%Y-%m-%d'),
+                util.get_datetime_in_format(last_day, '%Y-%m-%d')
+
+            ))[0][0]
 
         # Number of events per day
         min_max_dates = execute_query(
@@ -507,7 +514,8 @@ class Statistics(Resource):
         events_per_day = defaultdict(int)
         for row in query_result:
             event_date = datetime.strptime(row[0], '%Y-%m-%d').date()
-            events_per_day[event_date.strftime('%d-%m-%Y')] += 1
+            events_per_day[util.get_datetime_in_format(
+                event_date, '%d-%m-%Y')] += 1
 
         if args['format'] == 'json':
             return {
@@ -525,9 +533,14 @@ class Statistics(Resource):
                                 monthrange(current_year, month)[1])
                 total_events_current_month = execute_query(
                     "SELECT COUNT(*) FROM events WHERE date BETWEEN ? AND ?",
-                    (first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d')))[0][0]
-                events_per_month[first_day.strftime(
-                    '%b')] = total_events_current_month
+                    (util.get_datetime_in_format(
+                        first_day,
+                        '%Y-%m-%d'),
+                        util.get_datetime_in_format(
+                        last_day,
+                        '%Y-%m-%d')))[0][0]
+                events_per_month[util.get_datetime_in_format(
+                    first_day, '%b')] = total_events_current_month
 
             fig, ax = plt.subplots()
             ax.bar(events_per_month.keys(), events_per_month.values())
@@ -549,7 +562,7 @@ class Weather(Resource):
         type=str,
         required=True,
         help='Date in the format ``YYYY-MM-DD``',
-        default=date.today().strftime('%Y-%m-%d'),
+        default=util.get_datetime_in_format(datetime.now(), '%Y-%m-%d'),
     )
 
     @api.expect(date_parser)
@@ -611,7 +624,7 @@ class Weather(Resource):
                     event_date_obj = datetime.combine(
                         event_date_obj, datetime.min.time())
                     event_datetime_utc_str = str(
-                        convert_to_utc(event_date_obj))
+                        util.convert_to_utc(event_date_obj))
                     event_datetime_utc_str_without_tz = event_datetime_utc_str[:-6]
                     event_datetime_utc_obj = datetime.strptime(
                         event_datetime_utc_str_without_tz, '%Y-%m-%d %H:%M:%S')

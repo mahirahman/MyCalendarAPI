@@ -1,6 +1,7 @@
 from datetime import datetime
 import util.constants as const
 import re
+from util.sql import execute_query
 
 # Validate String
 
@@ -89,3 +90,8 @@ def all_data(data):
     if not data:
         errors['data'] = 'No payload data provided'
     return errors
+
+def is_event_overlap(params=()):
+    return execute_query(
+            "SELECT * FROM events WHERE date = ? AND time_from < ? AND time_to > ?",
+            params)

@@ -148,3 +148,13 @@ WEATHER_CONDITION = {
     "tsnight": "Lifted Index less than -5 with precipitation rate below 4mm/hr",
     "tsrainday": "Lifted Index less than -5 with precipitation rate over 4mm/hr",
     "tsrainnight": "Lifted Index less than -5 with precipitation rate over 4mm/hr"}
+
+# Regex Patterns
+
+ORDER_PATTERN = r'^([\+\-][a-zA-Z]+)(,[\+\-][a-zA-Z]+)*$'
+FILTER_PATTERN = r'^[a-zA-Z_]+(,[a-zA-Z_]+)*$'
+
+ORDER_DIRECTION = {
+    '+': 'ASC',
+    '-': 'DESC'
+}
