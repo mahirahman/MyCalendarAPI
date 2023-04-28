@@ -1,11 +1,7 @@
-import os
-import sys
-
 # General
 API_NAME = 'Events API'
 API_DESCRIPTION = 'Time-management and scheduling calendar service API for Australians.'
 DB_NAME = 'database'
-USAGE_MESSAGE = f'Usage: python3 {os.path.basename(sys.argv[0])} georef-australia-state-suburb.csv au.csv'
 
 # Schema
 SCHEMA = (

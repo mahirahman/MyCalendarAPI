@@ -1,27 +1,21 @@
 from datetime import datetime, timedelta, date
 from calendar import monthrange
 import math
+import re
+from io import BytesIO
+from collections import defaultdict
 import pandas as pd
 import geopandas as gpd
 import matplotlib
 import matplotlib.pyplot as plt
 import requests
-from io import BytesIO
-import sqlite3
 from flask import Flask, request, Response
 from flask_restx import Api, Resource, fields, reqparse
 from shapely.geometry import Point
-import sys
-import re
-from collections import defaultdict
 import util.validation as validation
 import util.constants as const
 from util.sql import execute_query
 import util.helper as util
-
-if len(sys.argv) != 3:
-    print(const.USAGE_MESSAGE)
-    sys.exit(1)
 
 execute_query(const.SCHEMA)
 app = Flask(__name__)
@@ -59,10 +53,7 @@ class CreateEvent(Resource):
 
         # Check request data contains all required fields
         if not const.FIELDS.issubset(
-            request_data.keys()) or not const.LOCATION_FIELDS.issubset(
-            request_data.get(
-                'location',
-                {}).keys()):
+            request_data.keys()) or not const.LOCATION_FIELDS.issubset(request_data.get('location',{}).keys()):
             return {"Error": "Missing required fields"}, 400
 
         # Validate request data
@@ -126,8 +117,7 @@ class CreateEvent(Resource):
         arg_filter = args['filter']
 
         # Validate arg_order
-        # Translation table that removes characters with ASCII codes 43 (+) and
-        # 45 (-)
+        # Translation table that removes characters with ASCII codes 43 (+) and 45 (-)
         field_names = [name.translate({43: None, 45: None})
                        for name in arg_order.split(',')]
         if not re.match(
@@ -279,8 +269,8 @@ class Events(Resource):
             return {"Error": "Error getting holiday data from NagerDate"}, 500
 
         # Get weather data
-        georef_df = pd.read_csv(sys.argv[1], delimiter=';')
-        georef_df = georef_df.drop(
+        geo_df = pd.read_csv("au_geo.csv", delimiter=';')
+        geo_df = geo_df.drop(
             columns=[
                 'Geo Shape',
                 'Year',
@@ -290,21 +280,20 @@ class Events(Resource):
                 'Official Code Suburb',
                 'Iso 3166-3 Area Code',
                 'Type'])
-        df = georef_df[['Geo Point', 'Official Name Suburb',
+        df = geo_df[['Geo Point', 'Official Name Suburb',
                         'Official Name State']].dropna()
         rows = df[df['Official Name Suburb'].str.contains(
             event[6]) & df['Official Name State'].str.contains(const.STATE_ABBREVIATIONS[event[7].upper()])]
-        # Check if row dataframe is not empty
+
+        # Check if there exists a suburb with the same name in the same state
         if not rows.empty:
             # Get the first row from row dataframe
             row = rows.iloc[0]
-            lat = row['Geo Point'].split(',')[0].replace(' ', '')
-            lng = row['Geo Point'].split(',')[1].replace(' ', '')
+            lat, lng = row['Geo Point'].split(',')[0].replace(' ', ''), row['Geo Point'].split(',')[1].replace(' ', '')
             url = f"https://www.7timer.info/bin/civil.php?lon={lng}&lat={lat}&lang=en&ac=0&unit=metric&output=json"
             response = requests.get(url)
             if response.status_code == 200:
-                init_date_str = response.json().get('init')
-                init_date_obj = datetime.strptime(init_date_str, '%Y%m%d%H')
+                init_date_obj = datetime.strptime(response.json().get('init'), '%Y%m%d%H')
                 event_date_obj = datetime.strptime(event[2], '%Y-%m-%d').date()
                 from_time_obj = datetime.strptime(event[3], '%H:%M:%S').time()
 
@@ -324,8 +313,7 @@ class Events(Resource):
                     dataseries = response.json().get('dataseries')
                     hours_between = (
                         event_datetime_utc_obj - init_date_obj).total_seconds() // 3600
-                    # Calculate the number of dataseries elements that fall
-                    # within the time period
+                    # Calculate the number of dataseries elements that fall within the time period
                     count = sum(1 for d in response.json().get(
                         'dataseries') if 0 <= d.get('timepoint') <= hours_between) - 1
                     metadata['cloud-cover'] = const.CLOUD_COVER.get(
@@ -478,37 +466,28 @@ class Statistics(Resource):
             return {"Error": "No events found"}, 404
         # Total Number of events in current calendar Week (Today to Sunday)
         today = date.today()
-        days_until_sunday = (6 - today.weekday()) % 7
-        next_sunday = today + timedelta(days=days_until_sunday)
+        next_sunday = today + timedelta(days=(6 - today.weekday()) % 7)
         total_events_current_week = execute_query(
             "SELECT COUNT(*) FROM events WHERE date BETWEEN ? AND ?",
-            (
+            (util.get_datetime_in_format(datetime.now(), '%Y-%m-%d'), next_sunday))[0][0]
 
-                util.get_datetime_in_format(datetime.now(), '%Y-%m-%d'),
-                next_sunday))[0][0]
-
-        # Total Number of events in current calendar Month (1st to the last day
-        # of the month)
+        # Total Number of events in current calendar month
         first_day = today.replace(day=1)
         last_day = today.replace(day=28) + timedelta(days=4)
 
-        # execute the SQL query to count the number of events in the current
-        # month
+        # Count the number of events in the current month
         total_events_current_month = execute_query(
             "SELECT COUNT(*) FROM events WHERE date BETWEEN ? AND ?",
             (
                 util.get_datetime_in_format(first_day, '%Y-%m-%d'),
                 util.get_datetime_in_format(last_day, '%Y-%m-%d')
-
             ))[0][0]
 
         # Number of events per day
         min_max_dates = execute_query(
             "SELECT MIN(date), MAX(date) FROM events")
-        start_date_str = min_max_dates[0][0]
-        end_date_str = min_max_dates[0][1]
-        start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-        end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        start_date = datetime.strptime(min_max_dates[0][0], '%Y-%m-%d').date()
+        end_date = datetime.strptime(min_max_dates[0][1], '%Y-%m-%d').date()
         query_result = execute_query(
             "SELECT date FROM events WHERE date BETWEEN ? AND ?", (start_date, end_date))
         events_per_day = defaultdict(int)
@@ -525,12 +504,12 @@ class Statistics(Resource):
                 "per-days": dict(events_per_day)
             }, 200
         else:
+            # Get the number of events per month of the current year
             current_year = datetime.now().year
             events_per_month = {}
             for month in range(1, 13):
                 first_day = date(current_year, month, 1)
-                last_day = date(current_year, month,
-                                monthrange(current_year, month)[1])
+                last_day = date(current_year, month, monthrange(current_year, month)[1])
                 total_events_current_month = execute_query(
                     "SELECT COUNT(*) FROM events WHERE date BETWEEN ? AND ?",
                     (util.get_datetime_in_format(
@@ -542,10 +521,12 @@ class Statistics(Resource):
                 events_per_month[util.get_datetime_in_format(
                     first_day, '%b')] = total_events_current_month
 
+            # Plot the graph
             fig, ax = plt.subplots()
             ax.bar(events_per_month.keys(), events_per_month.values())
             ax.set_xlabel('Month')
             ax.set_ylabel('Number of Events')
+            ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
             ax.set_title(f'Events per Month in Current Year ({current_year})')
             buffer = BytesIO()
             plt.savefig(buffer, format='png')
@@ -577,16 +558,12 @@ class Weather(Resource):
         if not validation.date(args['date']):
             return {"Error": "Invalid date format provided"}, 400
         # Validate the date is within a week
-        date_diff = (
-            datetime.strptime(
-                args['date'],
-                '%Y-%m-%d').date() -
-            date.today()).days
+        date_diff = (datetime.strptime(args['date'], '%Y-%m-%d').date() - date.today()).days
         if date_diff > 7 or date_diff < 0:
             return {"Error": "Date is not within a week"}, 400
 
         # Read the CSV file containing location data
-        au_df = pd.read_csv(sys.argv[2])
+        au_df = pd.read_csv("au_location.csv")
         au_df = au_df.drop(['country',
                             'iso2',
                             'admin_name',
@@ -595,53 +572,37 @@ class Weather(Resource):
                             'population_proper'],
                            axis=1)
 
-        # Filter the data to include only the first occurrence of each popular
-        # location
-        au_df = au_df[au_df['city'].isin(const.POPULAR_LOCATIONS)].groupby(
-            'city').first().reset_index()
+        # Filter the data to include only the first occurrence of each popular location
+        au_df = au_df[au_df['city'].isin(const.POPULAR_LOCATIONS)].groupby('city').first().reset_index()
 
         # Get the weather data for each location
         for loc in const.POPULAR_LOCATIONS:
             row = au_df[au_df['city'] == loc].iloc[0]
-            lng, lat = row['lng'], row['lat']
-            url = f"https://www.7timer.info/bin/civil.php?lon={lng}&lat={lat}&lang=en&ac=0&unit=metric&output=json"
+            url = f"https://www.7timer.info/bin/civil.php?lon={row['lng']}&lat={row['lat']}&lang=en&ac=0&unit=metric&output=json"
             response = requests.get(url)
             if response.status_code == 200:
                 data = response.json()
                 row_index = au_df[au_df['city'] == loc].index[0]
                 # Get first element if date is today
                 if date_diff == 0:
-                    au_df.at[row_index, 'temperature'] = data.get('dataseries')[
-                        0].get('temp2m')
+                    au_df.at[row_index, 'temperature'] = data.get('dataseries')[0].get('temp2m')
                 else:
-                    # otherwise get 4th element of the corresponding day
-                    init_date_str = data.get('init')
-                    init_date_obj = datetime.strptime(
-                        init_date_str, '%Y%m%d%H')
+                    # Otherwise get 4th element of the day (midday)
+                    init_date_obj = datetime.strptime(data.get('init'), '%Y%m%d%H')
+                    event_date_obj = datetime.strptime(args['date'], '%Y-%m-%d').date()
+                    event_date_obj = datetime.combine(event_date_obj, datetime.min.time())
+                    event_datetime_utc_str = str(util.convert_to_utc(event_date_obj))
+                    event_datetime_utc_obj = datetime.strptime(event_datetime_utc_str[:-6], '%Y-%m-%d %H:%M:%S')
 
-                    event_date_obj = datetime.strptime(
-                        args['date'], '%Y-%m-%d').date()
-                    event_date_obj = datetime.combine(
-                        event_date_obj, datetime.min.time())
-                    event_datetime_utc_str = str(
-                        util.convert_to_utc(event_date_obj))
-                    event_datetime_utc_str_without_tz = event_datetime_utc_str[:-6]
-                    event_datetime_utc_obj = datetime.strptime(
-                        event_datetime_utc_str_without_tz, '%Y-%m-%d %H:%M:%S')
-
-                    # Calculate the number of 3-hour intervals between
-                    # init_date_obj and event_datetime_utc_obj
-                    num_intervals = (
-                        event_datetime_utc_obj - init_date_obj).total_seconds() // (3 * 60 * 60)
-                    # If the number of intervals is negative, set temperature
-                    # to None
+                    # Calculate the number of 3-hour intervals between init_date_obj and event_datetime_utc_obj
+                    num_intervals = (event_datetime_utc_obj - init_date_obj).total_seconds() // (3 * 60 * 60)
+                    # If the number of intervals is negative, set temperature to None
                     if num_intervals < 0:
                         temperature = None
                         return {"Error": "Error retrieving weather data"}, 500
                     else:
                         # Get the temperature for the corresponding interval
-                        temperature = data.get('dataseries')[
-                            int(num_intervals)].get('temp2m')
+                        temperature = data.get('dataseries')[int(num_intervals)].get('temp2m')
                     # Update the temperature value in the dataframe
                     au_df.at[row_index, 'temperature'] = temperature
             else:
