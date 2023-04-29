@@ -14,7 +14,7 @@ To run the application locally:
 
 1. CD to the directory of the project
 2. Install the requirements by using the command `pip install -r requirements.txt`
-3. Run app.py
+3. Run `app.py`
 
 ### Interface
 
