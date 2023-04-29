@@ -1,5 +1,2 @@
-clean code, reduce code duplication, add comments, use constants, seperate validation, try catch sql
 add weather icons
-lint and style (autopep8 all files)
-export to ics
 requirements.txt

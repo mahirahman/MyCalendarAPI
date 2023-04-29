@@ -2,16 +2,18 @@ from datetime import datetime, timedelta, date
 from calendar import monthrange
 import math
 import re
-from io import BytesIO
+from io import BytesIO, StringIO
 from collections import defaultdict
 import pandas as pd
 import geopandas as gpd
 import matplotlib
 import matplotlib.pyplot as plt
 import requests
-from flask import Flask, request, Response
+from flask import Flask, request, Response, send_file, make_response
 from flask_restx import Api, Resource, fields, reqparse
 from shapely.geometry import Point
+import pytz
+from ics import Calendar, Event
 import util.validation as validation
 import util.constants as const
 from util.sql import execute_query
@@ -269,7 +271,7 @@ class Events(Resource):
             return {"Error": "Error getting holiday data from NagerDate"}, 500
 
         # Get weather data
-        geo_df = pd.read_csv("au_geo.csv", delimiter=';')
+        geo_df = pd.read_csv("data/au_geo.csv", delimiter=';')
         geo_df = geo_df.drop(
             columns=[
                 'Geo Shape',
@@ -563,7 +565,7 @@ class Weather(Resource):
             return {"Error": "Date is not within a week"}, 400
 
         # Read the CSV file containing location data
-        au_df = pd.read_csv("au_location.csv")
+        au_df = pd.read_csv("data/au_location.csv")
         au_df = au_df.drop(['country',
                             'iso2',
                             'admin_name',
@@ -649,6 +651,37 @@ class Weather(Resource):
 
         return Response(buffer.getvalue(), mimetype='image/png')
 
+@api.route('/calendar')
+class ICSCalendar(Resource):
+
+    @api.response(200, 'Successfully Retrieved Calendar')
+    @api.response(404, 'No Events Found')
+    @api.doc(description="Get all events in an ``ICS`` calendar format")
+    def get(self):
+        '''Get all events in an ICS calendar format'''
+        events = execute_query("SELECT * FROM events")
+        print(events)
+        if not events:
+            return {"Error": "No events found"}, 404
+        cal = Calendar()
+        for row in events:
+            event = Event()
+            event.name = row[1]
+            event.begin = pytz.timezone('Australia/Sydney').localize(datetime.combine(datetime.strptime(row[2], '%Y-%m-%d').date(), datetime.strptime(row[3], '%H:%M:%S').time()))
+            event.end = pytz.timezone('Australia/Sydney').localize(datetime.combine(datetime.strptime(row[2], '%Y-%m-%d').date(), datetime.strptime(row[4], '%H:%M:%S').time()))
+            event.location = f"{row[5]}, {row[6]}, {row[7]} {row[8]}"
+            event.description = row[9]
+            event.last_modified = pytz.utc.localize(datetime.strptime(row[10], '%Y-%m-%d %H:%M:%S'))
+            cal.events.add(event)
+
+        # Write the ICS data to an in-memory buffer
+        buffer = StringIO(cal.serialize(), newline=None)
+        buffer.seek(0)
+        # Create a response with the ICS data as an attachment
+        response = make_response(send_file(buffer, as_attachment=True, attachment_filename='calendar.ics', mimetype='text/calendar'))
+        response.headers['Content-Disposition'] = 'attachment; filename=calendar.ics'
+        buffer.truncate(0)
+        return response
 
 if __name__ == '__main__':
     app.run(debug=False)
