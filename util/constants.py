@@ -143,7 +143,8 @@ WEATHER_CONDITION = {
     "tsday": "Lifted Index less than -5 with precipitation rate below 4mm/hr",
     "tsnight": "Lifted Index less than -5 with precipitation rate below 4mm/hr",
     "tsrainday": "Lifted Index less than -5 with precipitation rate over 4mm/hr",
-    "tsrainnight": "Lifted Index less than -5 with precipitation rate over 4mm/hr"}
+    "tsrainnight": "Lifted Index less than -5 with precipitation rate over 4mm/hr"
+}
 
 # Regex Patterns
 

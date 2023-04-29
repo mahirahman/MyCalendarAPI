@@ -1,2 +1,0 @@
-add weather icons
-requirements.txt
