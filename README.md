@@ -1,4 +1,4 @@
-# MyCalendar 🌍
+# MyCalendarAPI 🗓️
 
 Time-management and scheduling calendar service API for Australians 📆
 
