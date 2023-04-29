@@ -25,8 +25,8 @@ Endpoint | Description | Method | Data Type | Response
 `/events/{id}` | Get an event by its `ID` | GET | **Parameters:**  `id` <br/> **Return Type:** `{ id, last-update, name, date, from, to, location: {street, suburb, state, post-code } description, _metadata: { wind-speed, weather, humidity, temperature, holiday, weekend }, _links: { self: { href }, previous: { href } , next: { href } } } }` | **200:** Successfully Retrieved Event <br/> **404:** Event Not Found <br/> **500:** Error Getting Data From External API
 `/events/{id}` | Update an event by its `ID` | PATCH |  **Parameters:**  `id` <br/> **Payload:** `{ name, date, from, to, location: {street, suburb, state, post-code } description,  }` <br/> **Return Type:** `{ id, last-update, _links: { self: { href } } }` | **200:** Event Updated Successfully <br/> **400:** Validation Error <br/> **404:** Event Was Not Found
 `/events/{id}` | Delete an event by its `ID` | DELETE |  **Parameters:**  `id` <br/> **Return Type:** `{message, id}`  | **200:** Event Deleted Successfully <br/> **404:**	Event Was Not Found
-`/events/statistics?format=<json/image>` | Get all event statistics | GET |  **Parameters:**  `format` <br/> **Return Type:** `{json / image}`  | **200:** Successfully Retrieved Event Statistics <br/> **400:** Validation Error <br/> **404:**	No Events Found
-`/weather?date=2023-04-29` | Get the weather of popular Australian cities | GET |  **Parameters:**  `date` <br/> **Return Type:** `{ image }`  | **200:** Successfully Retrieved Weather <br/> **400:** Validation Error <br/> **500:** Error Retrieving Weather Data
+`/events/statistics?format=<json/image>` | Get all event statistics | GET |  **Parameters:**  `format` <br/> **Return Type:** `json / image`  | **200:** Successfully Retrieved Event Statistics <br/> **400:** Validation Error <br/> **404:**	No Events Found
+`/weather?date=2023-04-29` | Get the weather of popular Australian cities | GET |  **Parameters:**  `date` <br/> **Return Type:** `image`  | **200:** Successfully Retrieved Weather <br/> **400:** Validation Error <br/> **500:** Error Retrieving Weather Data
 
 ### Prerequisites
 
